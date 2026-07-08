@@ -43,6 +43,48 @@
 </section>
 
 <section class="engine"><div class="card"><div class="card-head"><span>ORACLE INTELLIGENCE ENGINE</span><strong>v1.0</strong></div><div class="engine-grid"><div><span>EVENTS ANALYZED</span><b id="eventsAnalyzed">--</b></div><div><span>COUNTRIES</span><b id="countries">211</b></div><div><span>MODEL CONFIDENCE</span><b id="modelConfidence">--%</b></div><div><span>INTEGRITY</span><b id="integrity">ONLINE</b></div></div></div></section>
+
+<section class="admin-terminal" id="adminTerminal">
+  <div class="admin-head">
+    <div>
+      <span>ADMIN TERMINAL</span>
+      <h2>ORACLE CONTROL</h2>
+    </div>
+    <button id="adminClose" type="button">HIDE</button>
+  </div>
+
+  <div class="admin-grid">
+    <label>Score<input id="adminScore" type="number" min="0" max="100" /></label>
+    <label>State<input id="adminState" type="text" /></label>
+    <label>Delta<input id="adminDelta" type="number" /></label>
+    <label>Confidence<input id="adminConfidence" type="number" min="0" max="100" /></label>
+  </div>
+
+  <label class="admin-field">Brief<textarea id="adminBrief" rows="2"></textarea></label>
+  <label class="admin-field">AI Assessment<textarea id="adminAssessment" rows="4"></textarea></label>
+
+  <div class="admin-grid">
+    <label>Top Event<input id="adminTopTitle" type="text" /></label>
+    <label>Source<input id="adminTopSource" type="text" /></label>
+  </div>
+  <label class="admin-field">Top Event Summary<textarea id="adminTopSummary" rows="3"></textarea></label>
+  <label class="admin-field">Source URL<input id="adminTopUrl" type="url" /></label>
+
+  <label class="admin-field">Hot Regions <small>name | score | driver | trend</small><textarea id="adminRegions" rows="6"></textarea></label>
+  <label class="admin-field">24H Timeline <small>time | text</small><textarea id="adminTimeline" rows="5"></textarea></label>
+
+  <div class="admin-actions">
+    <button id="adminApply" type="button">APPLY</button>
+    <button id="adminSave" type="button">SAVE LOCAL</button>
+    <button id="adminCopyPost" type="button">COPY POST</button>
+    <button id="adminExport" type="button">EXPORT JSON</button>
+    <button id="adminReset" type="button">RESET</button>
+  </div>
+
+  <textarea id="adminOutput" rows="8" placeholder="Generated post / exported JSON"></textarea>
+  <p class="admin-note">This hidden terminal appears only with <b>?admin=doom</b>. Saved edits are stored in this browser via localStorage.</p>
+</section>
+
 <footer>Powered by ORACLE Intelligence Engine<br/>Real-time monitoring of publicly available global events.</footer>
 </div>
 
