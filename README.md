@@ -1,3 +1,5 @@
-ORACLE - World Risk Intelligence
+# ORACLE
 
-Includes transparent HOW WE CALCULATE and WHY 38 score explanation.
+World Risk Intelligence dashboard.
+
+This build preserves the large Global Risk Index design and adds a small “Why 38?” explanation modal.

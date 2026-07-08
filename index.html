@@ -20,7 +20,8 @@
     <section class="hero reveal">
       <div class="hero-center">
         <div class="label">GLOBAL RISK INDEX</div>
-        <button class="score score-button" id="score" type="button" aria-label="Open score calculation details">38</button>
+        <div class="score" id="score">38</div>
+        <button class="why-link" id="whyScore" type="button" aria-haspopup="dialog" aria-controls="scoreModal">ⓘ Why 38?</button>
         <div class="state" id="state">WATCH</div>
         <div class="delta" id="delta">▲ +2 / 24H</div>
         <div class="updated" id="updated">UPDATED — --:-- JST</div>
@@ -73,26 +74,6 @@
       </article>
     </section>
 
-
-    <section class="grid lower">
-      <article class="card calc reveal">
-        <div class="card-head"><span>HOW WE CALCULATE</span><strong>TRANSPARENT MODEL</strong></div>
-        <p class="calc-copy">Global Risk Index is calculated from public indicators and AI-assisted analysis. The score is situational awareness, not a prediction.</p>
-        <div id="formulaRows"></div>
-        <div class="formula-total">
-          <div><span>RAW SCORE</span><b id="rawScore">44.3</b></div>
-          <div><span>CONTAINMENT</span><b id="containment">−6.3</b></div>
-          <div><span>FINAL</span><b id="finalScore">38</b></div>
-        </div>
-      </article>
-
-      <article class="card calc reveal">
-        <div class="card-head"><span>WHY 38?</span><strong>SCORE BREAKDOWN</strong></div>
-        <p class="calc-copy">Military tension is elevated, but logistics, finance and disaster indicators remain contained. That containment lowers the final global score.</p>
-        <div id="breakdownRows"></div>
-      </article>
-    </section>
-
     <section class="signal-grid reveal" id="signals"></section>
 
     <section class="trust reveal">
@@ -107,21 +88,6 @@
       <small id="footerSync">Last system update: --:--:-- JST</small>
     </footer>
 
-
-    <div class="calc-modal" id="calcModal" aria-hidden="true">
-      <div class="calc-modal-panel" role="dialog" aria-modal="true" aria-labelledby="calcModalTitle">
-        <button class="modal-close" id="calcClose" type="button" aria-label="Close">×</button>
-        <div class="card-head"><span id="calcModalTitle">WHY 38?</span><strong>SCORE MODEL</strong></div>
-        <p class="calc-copy">Global Risk Index is calculated from weighted public indicators, then reduced by containment factors when escalation remains regionally limited.</p>
-        <div id="modalBreakdownRows"></div>
-        <div class="formula-total modal-total">
-          <div><span>RAW SCORE</span><b id="modalRawScore">44.3</b></div>
-          <div><span>CONTAINMENT</span><b id="modalContainment">−6.3</b></div>
-          <div><span>FINAL</span><b id="modalFinalScore">38</b></div>
-        </div>
-      </div>
-    </div>
-
     <section class="admin" id="adminPanel">
       <div class="card-head"><span>ADMIN TERMINAL</span><strong>PRIVATE</strong></div>
       <div class="admin-buttons">
@@ -134,6 +100,24 @@
       <textarea id="postText" rows="9"></textarea>
     </section>
   </main>
+
+
+  <div class="modal" id="scoreModal" aria-hidden="true">
+    <div class="modal-backdrop" data-close="scoreModal"></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="scoreModalTitle">
+      <button class="modal-close" type="button" data-close="scoreModal" aria-label="Close">×</button>
+      <div class="card-head modal-head"><span id="scoreModalTitle">HOW WE CALCULATE</span><strong>WHY 38?</strong></div>
+      <p class="modal-intro">Global Risk Score is calculated from multiple public indicators and adjusted for containment.</p>
+      <div class="calc-list" id="calcList"></div>
+      <div class="calc-total">
+        <div><span>RAW SCORE</span><b id="rawScore">44.3</b></div>
+        <div><span>CONTAINMENT</span><b id="containmentScore">−6.3</b></div>
+        <div class="final"><span>FINAL SCORE</span><b id="finalScore">38</b></div>
+      </div>
+      <p class="modal-note">Scores are generated from publicly available information and AI-assisted analysis. They are intended for situational awareness, not prediction.</p>
+    </section>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
