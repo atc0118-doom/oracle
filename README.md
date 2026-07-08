@@ -1,3 +1,3 @@
-# ORACLE v1.0 Final
+# ORACLE metrics-ready
 
-Real-time global risk dashboard using public GDELT signals with automatic scoring, AI-style assessment, dynamic regions, timeline, sources, and WHY SCORE calculation.
+Bottom metrics revised: active conflicts, military flights, cyber alerts, and logistics now show concrete realtime-style indicators.

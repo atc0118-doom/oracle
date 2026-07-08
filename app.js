@@ -7,7 +7,7 @@ const fallback = {
   regions: [ ['Ukraine',55,'Military','▲ +1'], ['Taiwan Strait',50,'Military','▲ +2'], ['Middle East',48,'Diplomatic','→ 0'], ['South China Sea',40,'Military','→ 0'], ['Cyber',20,'Cyber','→ 0'] ],
   timeline: [ ['14:20','Military signal remains under monitoring.'], ['13:10','Regional statements indicate continued diplomatic friction.'], ['11:50','No broad escalation signal detected across monitored sources.'], ['09:30','Logistics and market stress remain contained.'] ],
   sources: ['GDELT','Reuters','AP','BBC','NHK','Al Jazeera','USGS','NASA','MarineTraffic','FlightRadar24'],
-  metrics: { activeConflicts:1, milFlights:'Watch', cyberStatus:'Watch', logStatus:'Stable', eventsAnalyzed:4812 }
+  metrics: { activeConflicts:7, activeConflictsMeta:'+1 / 24H · MONITORED', milFlights:'Elevated', milFlightsMeta:'186 SORTIES DETECTED', cyberStatus:'Medium', cyberStatusMeta:'247 EVENTS / 24H', logStatus:'Stable', logStatusMeta:'PORT DELAY +3%', eventsAnalyzed:4812 }
 };
 
 async function getData(){
@@ -26,7 +26,7 @@ function render(d){
   el('timeline').innerHTML=d.timeline.map(x=>`<div class="timeline-row"><div class="time">${x[0]}</div><div>${x[1]}</div></div>`).join('');
   el('sources').innerHTML=d.sources.map(s=>`<div class="source live-source">${s}</div>`).join('');
   el('lastSync').textContent=fmtTime(); el('sourceHealth').textContent=(d.sourceHealth||96)+'%';
-  el('activeConflicts').textContent=d.metrics.activeConflicts; el('milFlights').textContent=d.metrics.milFlights; el('cyberStatus').textContent=d.metrics.cyberStatus; el('logStatus').textContent=d.metrics.logStatus; el('eventsAnalyzed').textContent=(d.metrics.eventsAnalyzed||4812).toLocaleString(); el('modelConfidence').textContent=d.confidence+'%';
+  el('activeConflicts').textContent=d.metrics.activeConflicts; el('activeConflictsMeta').textContent=d.metrics.activeConflictsMeta||'MONITORED'; el('milFlights').textContent=d.metrics.milFlights; el('milFlightsMeta').textContent=d.metrics.milFlightsMeta||'EAST ASIA'; el('cyberStatus').textContent=d.metrics.cyberStatus; el('cyberStatusMeta').textContent=d.metrics.cyberStatusMeta||'NO GLOBAL SURGE'; el('logStatus').textContent=d.metrics.logStatus; el('logStatusMeta').textContent=d.metrics.logStatusMeta||'CONTAINED'; el('eventsAnalyzed').textContent=(d.metrics.eventsAnalyzed||4812).toLocaleString(); el('modelConfidence').textContent=d.confidence+'%';
   window.currentOracle=d; buildCalc(d);
 }
 function buildCalc(d){

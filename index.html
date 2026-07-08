@@ -35,7 +35,12 @@
   <article class="card"><div class="card-head"><span>DATA SOURCES</span><strong>MONITORED</strong></div><div class="source-grid" id="sources"></div><div class="sync-grid"><div><span>LAST SYNC</span><b id="lastSync">--</b></div><div><span>AUTO REFRESH</span><b>60 SEC</b></div><div><span>SOURCE HEALTH</span><b id="sourceHealth">--%</b></div></div></article>
 </section>
 
-<section class="metrics"><div class="metric"><span>ACTIVE CONFLICTS</span><b id="activeConflicts">--</b><small>STATUS ACTIVE</small></div><div class="metric"><span>MILITARY FLIGHTS</span><b id="milFlights">--</b><small>EAST ASIA</small></div><div class="metric"><span>CYBER ALERTS</span><b id="cyberStatus">--</b><small>NO GLOBAL SURGE</small></div><div class="metric"><span>LOGISTICS</span><b id="logStatus">--</b><small>CONTAINED</small></div></section>
+<section class="metrics">
+  <div class="metric"><span>ACTIVE CONFLICTS</span><b id="activeConflicts">--</b><small id="activeConflictsMeta">--</small></div>
+  <div class="metric"><span>MILITARY FLIGHTS</span><b id="milFlights">--</b><small id="milFlightsMeta">--</small></div>
+  <div class="metric"><span>CYBER ALERTS</span><b id="cyberStatus">--</b><small id="cyberStatusMeta">--</small></div>
+  <div class="metric"><span>LOGISTICS</span><b id="logStatus">--</b><small id="logStatusMeta">--</small></div>
+</section>
 
 <section class="engine"><div class="card"><div class="card-head"><span>ORACLE INTELLIGENCE ENGINE</span><strong>v1.0</strong></div><div class="engine-grid"><div><span>EVENTS ANALYZED</span><b id="eventsAnalyzed">--</b></div><div><span>COUNTRIES</span><b id="countries">211</b></div><div><span>MODEL CONFIDENCE</span><b id="modelConfidence">--%</b></div><div><span>INTEGRITY</span><b id="integrity">ONLINE</b></div></div></div></section>
 <footer>Powered by ORACLE Intelligence Engine<br/>Real-time monitoring of publicly available global events.</footer>
