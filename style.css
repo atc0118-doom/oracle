@@ -133,7 +133,7 @@ body:after{
   letter-spacing:.17em;
   font-weight:720;
   color:var(--yellow);
-  transform:translateX(4px);
+  transform:translateX(6px);
 }
 
 .delta{margin-top:15px;color:#d9dde3;font-size:13px;letter-spacing:.12em}
