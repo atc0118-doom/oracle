@@ -3,81 +3,72 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ORACLE | Global Risk Intelligence</title>
+  <title>ORACLE | World Risk Intelligence</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="boot" id="boot">ORACLE // ONLINE</div>
+  <div class="grain"></div>
   <main class="shell">
     <header class="topbar">
       <div>
         <div class="brand">ORACLE</div>
-        <div class="sub">Global Risk Intelligence Dashboard</div>
+        <div class="sub">World Risk Intelligence</div>
       </div>
-      <div class="status"><span></span><b id="updated">Updated --</b></div>
+      <div class="live"><span></span>LIVE</div>
     </header>
 
-    <section class="hero card">
-      <div class="risk-core">
-        <div class="eyebrow">GLOBAL RISK INDEX</div>
-        <div class="score" id="score">38</div>
-        <div class="level" id="level">LEVEL II / WATCH</div>
-        <div class="delta" id="delta">▲ +2 / 24H</div>
+    <section class="hero">
+      <div class="label">GLOBAL RISK INDEX</div>
+      <div class="score" id="score">38</div>
+      <div class="status">WATCH</div>
+      <div class="delta">▲ +2 / 24H ・ Updated <span id="updated">--:-- JST</span></div>
+    </section>
+
+    <section class="panel assessment">
+      <div class="panel-title">AI ASSESSMENT</div>
+      <p>Current global risk remains elevated.</p>
+      <p>Primary pressure is concentrated around East Asia and Eastern Europe.</p>
+      <div class="confidence">
+        <span>Confidence</span>
+        <strong>84%</strong>
       </div>
-      <div class="scale" aria-label="Risk scale">
-        <div class="bar"><i id="pointer"></i></div>
-        <div class="scale-labels"><span>SAFE</span><span>WATCH</span><span>ALERT</span><span>HIGH</span><span>CRITICAL</span></div>
-      </div>
     </section>
 
-    <section class="grid two">
-      <article class="card outlook">
-        <div class="eyebrow">AI OUTLOOK</div>
-        <p class="danger">HIGHEST CONCERN</p>
-        <h2 id="concern">Taiwan Strait</h2>
-        <p id="outlookText">Military activity and diplomatic friction are increasing simultaneously.</p>
-        <div class="drivers" id="drivers"></div>
-        <div class="confidence"><small>CONFIDENCE</small><strong id="confidence">84%</strong><div><i style="width:84%"></i></div></div>
-      </article>
-
-      <article class="card event">
-        <div class="row"><div class="eyebrow">TOP EVENT</div><a id="eventSource" href="#" target="_blank" rel="noreferrer">Reuters</a></div>
-        <h2 id="eventTitle">Military drills continue near Taiwan Strait as tensions rise.</h2>
-        <p id="eventSummary">Latest reporting indicates elevated military activity and continued regional concern.</p>
-        <div class="row muted"><span id="eventTime">Updated 12 min ago</span><a id="readMore" href="#" target="_blank" rel="noreferrer">READ MORE ›</a></div>
-      </article>
+    <section class="panel event">
+      <div class="panel-title">TOP EVENT</div>
+      <h2>Taiwan Strait</h2>
+      <p>Military activity increased around the region. No immediate global escalation signal detected.</p>
+      <div class="source">Reuters ・ 12 min ago</div>
     </section>
 
-    <section class="card why">
-      <div>
-        <div class="eyebrow">WHY?</div>
-        <p>Risk increased by</p>
-        <strong id="whyDelta">+3</strong>
-      </div>
-      <div class="breakdown" id="breakdown"></div>
-      <div class="trend"><canvas id="trend" width="420" height="150"></canvas></div>
+    <section class="panel drivers">
+      <div class="panel-title">RISK DRIVERS</div>
+      <div class="driver"><span>Military</span><i style="--w:78%"></i><b>78%</b></div>
+      <div class="driver"><span>Logistics</span><i style="--w:15%"></i><b>15%</b></div>
+      <div class="driver"><span>Political</span><i style="--w:7%"></i><b>7%</b></div>
     </section>
 
-    <section class="card ranking">
-      <div class="row"><div class="eyebrow">GLOBAL RISK RANKING</div><span class="muted">TOP 5</span></div>
-      <div class="rank-list" id="ranking"></div>
+    <section class="panel ranking">
+      <div class="panel-title">GLOBAL RISK RANKING</div>
+      <ol>
+        <li><span>Ukraine</span><b>72</b><em>▲ +4</em></li>
+        <li><span>Taiwan</span><b>68</b><em>▲ +2</em></li>
+        <li><span>Iran</span><b>64</b><em>→ 0</em></li>
+        <li><span>Russia</span><b>61</b><em>▼ -1</em></li>
+        <li><span>Israel</span><b>57</b><em>▲ +1</em></li>
+      </ol>
     </section>
 
-    <section class="card admin" id="admin">
-      <div class="row"><div class="eyebrow">ADMIN TERMINAL</div><span class="muted">hidden public</span></div>
-      <div class="buttons">
-        <button onclick="makePost('morning')">Morning</button>
-        <button onclick="makePost('midday')">Midday</button>
-        <button onclick="makePost('night')">Night</button>
-        <button onclick="makePost('alert')">Alert</button>
-        <button onclick="copyPost()">Copy</button>
-      </div>
-      <textarea id="post" rows="10" placeholder="Generate post..."></textarea>
+    <section class="admin" id="adminPanel">
+      <div class="panel-title">ADMIN TERMINAL</div>
+      <button onclick="makePost('morning')">Morning</button>
+      <button onclick="makePost('noon')">Noon</button>
+      <button onclick="makePost('night')">Night</button>
+      <button onclick="copyPost()">Copy</button>
+      <textarea id="postText" rows="8"></textarea>
     </section>
 
-    <footer class="sources card">
-      <span>SOURCES</span><a>Reuters</a><a>AP</a><a>BBC</a><a>NHK</a><a>USGS</a><a>GDELT</a><small>powered by 終末観測盤</small>
-    </footer>
+    <footer>Sources: Reuters / AP / BBC / NHK / GDELT / USGS</footer>
   </main>
   <script src="app.js"></script>
 </body>
