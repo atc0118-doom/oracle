@@ -1,8 +1,3 @@
-# ORACLE
+ORACLE - World Risk Intelligence
 
-Realtime complete revision.
-
-- Corrected Al Jazeera
-- Added MarineTraffic / FlightRadar24
-- Added Last Sync / Auto Refresh / Source Health
-- Added status labels and footer
+Includes transparent HOW WE CALCULATE and WHY 38 score explanation.
