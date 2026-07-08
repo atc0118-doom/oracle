@@ -1,2 +1,4 @@
 # ORACLE
-World Risk Intelligence dashboard.
+World Risk Intelligence.
+
+Design axis: Silent Intelligence — a quiet terminal for global risk monitoring.
