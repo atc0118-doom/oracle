@@ -1,10 +1,6 @@
 # ORACLE
+World Risk Intelligence
 
-World Risk Intelligence dashboard.
+Silent intelligence dashboard with auto refresh, source visibility, risk drivers, hot regions, 24H timeline, and admin post generator.
 
-This build adds the core content layer:
-1. TOP EVENT
-2. RISK DRIVERS
-3. HOT REGIONS
-4. 24H TIMELINE
-5. DATA SOURCES
+Admin: `?admin=doom`

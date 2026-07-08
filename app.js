@@ -1,63 +1,16 @@
-const ranking = [
-  {name:'Taiwan Strait', score:64, change:'+2', note:'Military activity'},
-  {name:'Ukraine', score:59, change:'+1', note:'Active conflict'},
-  {name:'Middle East', score:56, change:'0', note:'Diplomatic pressure'},
-  {name:'South China Sea', score:48, change:'+1', note:'Maritime tension'},
-  {name:'Korea', score:42, change:'-1', note:'Watch level'}
-];
-
-const timeline = [
-  {time:'14:20', text:'Military aviation activity remains elevated around East Asia.'},
-  {time:'13:10', text:'Regional statements indicate continued diplomatic friction.'},
-  {time:'11:50', text:'No broad global escalation signal detected across monitored sources.'},
-  {time:'09:30', text:'Logistics and market stress remain contained.'}
-];
-
+const fallback={score:38,state:'WATCH',delta:'+2 / 24H',brief:'Regional tensions remain elevated. Global escalation risk remains contained.',confidence:84,assessment:'Current global risk remains stable despite concentrated military activity in East Asia. Escalation signals remain limited.',topEvent:{title:'Taiwan Strait',source:'Reuters',summary:'Military activity increased around the region. No immediate global escalation signal detected.',url:'https://www.reuters.com/'},drivers:[['Military',78],['Diplomatic',42],['Cyber',31],['Logistics',18],['Finance',12]],regions:[['Taiwan Strait',64,'Military activity · ▲ +2'],['Ukraine',59,'Active conflict · ▲ +1'],['Middle East',56,'Diplomatic pressure · → 0'],['South China Sea',48,'Maritime tension · ▲ +1'],['Korea',42,'Watch level · ▼ 1']],timeline:[['14:20','Military aviation activity remains elevated around East Asia.'],['13:10','Regional statements indicate continued diplomatic friction.'],['11:50','No broad global escalation signal detected across monitored sources.'],['09:30','Logistics and market stress remain contained.']],sources:['Reuters','AP','BBC','NHK','Al Jazeera','GDELT','USGS','NASA'],signals:[['ACTIVE CONFLICTS','7','Monitored'],['MILITARY FLIGHTS','Elevated','East Asia'],['CYBER ALERTS','Watch','No global surge'],['LOGISTICS','Stable','Contained']]};
+let current=fallback;
 function $(id){return document.getElementById(id)}
-function pad(n){return String(n).padStart(2,'0')}
-function updateTime(){
-  const d = new Date();
-  const el = $('updated');
-  if(el) el.textContent = `UPDATED — ${pad(d.getHours())}:${pad(d.getMinutes())} JST`;
-}
-function renderRanking(){
-  const root = $('ranking');
-  if(!root) return;
-  root.innerHTML = ranking.map((r,i)=>`
-    <div class="rank">
-      <div class="ranknum">${i+1}</div>
-      <div>
-        <div class="rankname">${r.name}</div>
-        <div class="rankmeta">${r.note} · ${r.change==='0'?'→ 0':(r.change.startsWith('-')?'▼ ':'▲ ')+r.change.replace('-','')}</div>
-      </div>
-      <div class="rankscore">${r.score}</div>
-      <div class="rankbar"><i style="width:${r.score}%"></i></div>
-    </div>`).join('');
-}
-function renderTimeline(){
-  const root = $('timeline');
-  if(!root) return;
-  root.innerHTML = timeline.map(t=>`
-    <div class="timeline-item">
-      <div class="timeline-time">${t.time}</div>
-      <div class="timeline-text">${t.text}</div>
-    </div>`).join('');
-}
-function makePost(type){
-  const templates = {
-    morning:'【ORACLE Morning】\nGlobal Risk Index: 38 / WATCH\nTop event: Taiwan Strait. Regional tensions remain elevated, while global escalation risk remains contained.\n#ORACLE #WorldRisk #Geopolitics',
-    noon:'【ORACLE Midday】\nRisk drivers: Military 78 / Diplomatic 42 / Cyber 31 / Logistics 18 / Finance 12.\nPrimary pressure remains concentrated in East Asia.\n#ORACLE #WorldRisk #Intelligence',
-    night:'【ORACLE Night Report】\nHot regions: Taiwan Strait, Ukraine, Middle East, South China Sea, Korea.\nNo immediate global escalation signal detected.\n#ORACLE #WorldRisk',
-    alert:'【ORACLE Alert】\nRisk level requires attention. Check latest regional signals, source updates, and 24H timeline.\n#ORACLE #RiskAlert'
-  };
-  $('postText').value = templates[type] || templates.morning;
-}
-async function copyPost(){
-  const t = $('postText');
-  t.select();
-  try{await navigator.clipboard.writeText(t.value)}catch(e){document.execCommand('copy')}
-}
-function initAdmin(){
-  if(new URLSearchParams(location.search).get('admin')==='doom') $('adminPanel')?.classList.add('open');
-}
-updateTime(); renderRanking(); renderTimeline(); initAdmin(); setInterval(updateTime,60000);
+function jst(){return new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tokyo'})}
+function animateScore(next){const el=$('score');const start=Number(el.textContent)||next;const diff=next-start;let t=0;const timer=setInterval(()=>{t+=1;el.textContent=Math.round(start+diff*(t/12));if(t>=12){el.textContent=next;clearInterval(timer)}},24)}
+function render(data){current=data;animateScore(Number(data.score||38));$('state').textContent=data.state||'WATCH';$('delta').textContent='▲ '+(data.delta||'+2 / 24H');$('updated').textContent='UPDATED — '+jst()+' JST';$('brief').textContent=data.brief;$('confidence').textContent=data.confidence+'%';$('confidenceBar').style.width=data.confidence+'%';$('assessment').textContent=data.assessment;$('topTitle').textContent=data.topEvent.title;$('topSource').textContent=data.topEvent.source;$('topSummary').textContent=data.topEvent.summary;$('topLink').href=data.topEvent.url;
+$('drivers').innerHTML=data.drivers.map(d=>`<div class="driver"><span>${d[0]}</span><div><i style="width:${d[1]}%"></i></div><strong>${d[1]}</strong></div>`).join('');
+$('regions').innerHTML=data.regions.map((r,i)=>`<div class="region"><div class="region-no">${i+1}</div><div><div class="region-name">${r[0]}</div><div class="region-meta">${r[2]}</div></div><div class="region-score">${r[1]}</div><div class="rankbar"><i style="width:${r[1]}%"></i></div></div>`).join('');
+$('timeline').innerHTML=data.timeline.map(t=>`<div class="time-row"><b>${t[0]}</b><span>${t[1]}</span></div>`).join('');
+$('sources').innerHTML=data.sources.map(s=>`<b>${s}</b>`).join('');
+$('signals').innerHTML=data.signals.map(s=>`<div class="mini"><span>${s[0]}</span><b>${s[1]}</b><small>${s[2]}</small></div>`).join('');}
+async function load(){try{const res=await fetch('/api/risk.js?ts='+Date.now(),{cache:'no-store'}); const text=await res.text(); if(text.trim().startsWith('{')) render(JSON.parse(text)); else render(fallback);}catch(e){render(fallback)}}
+function makePost(type){const top=current.topEvent; const base=`【ORACLE / ${type.toUpperCase()}】\n\nGlobal Risk Index: ${current.score} / ${current.state}\n${current.brief}\n\nTop Event: ${top.title}\nSource: ${top.source}\n\nRisk Drivers:\n${current.drivers.map(d=>`- ${d[0]} ${d[1]}`).join('\n')}\n\n#ORACLE #WorldRisk #Geopolitics #RiskIntelligence`; $('postText').value=base}
+async function copyPost(){const t=$('postText').value; try{await navigator.clipboard.writeText(t)}catch(e){}}
+if(location.search.includes('admin=doom')){$('adminPanel').classList.add('open');makePost('day')}
+load();setInterval(load,60000);setInterval(()=>{$('updated').textContent='UPDATED — '+jst()+' JST'},30000);
