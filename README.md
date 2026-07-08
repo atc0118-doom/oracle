@@ -1,5 +1,2 @@
 # ORACLE
-
-World Risk Intelligence.
-
-Silent Intelligence design build.
+World Risk Intelligence
