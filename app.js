@@ -13,7 +13,19 @@ const el=id=>document.getElementById(id);
 const fmtTime=()=> new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Asia/Tokyo'}).format(new Date())+' JST';
 function level(score){ if(score>=75)return'CRITICAL'; if(score>=55)return'HIGH'; if(score>=30)return'WATCH'; return'STABLE'; }
 function clone(d){ return JSON.parse(JSON.stringify(d)); }
-function normalize(d){ return {...fallback, ...d, topEvent:{...fallback.topEvent, ...(d.topEvent||{})}, metrics:{...fallback.metrics, ...(d.metrics||{})}, drivers:d.drivers||fallback.drivers, regions:d.regions||fallback.regions, timeline:d.timeline||fallback.timeline, sources:(d.sources||fallback.sources).map(s=>s==='AI Jazeera'?'Al Jazeera':s)}; }
+
+function normalize(d){
+  const merged = {...fallback, ...d, topEvent:{...fallback.topEvent, ...(d.topEvent||{})}, metrics:{...fallback.metrics, ...(d.metrics||{})}, drivers:d.drivers||fallback.drivers, regions:d.regions||fallback.regions, timeline:d.timeline||fallback.timeline, sources:(d.sources||fallback.sources).map(s=>s==='AI Jazeera'?'Al Jazeera':s)};
+  // Safety: never show all-zero drivers. If the live API returns sparse/empty data, keep baseline monitoring values.
+  if(!Array.isArray(merged.drivers) || merged.drivers.reduce((a,x)=>a+(Number(x[1])||0),0) <= 0){
+    merged.drivers = fallback.drivers;
+  }
+  if(!Array.isArray(merged.regions) || merged.regions.length === 0 || merged.regions.every(x=>(Number(x[1])||0)<=12)){
+    merged.regions = fallback.regions;
+  }
+  return merged;
+}
+
 async function getData(){ try{ const r=await fetch('/api/risk',{cache:'no-store'}); if(!r.ok) throw new Error('API'); return normalize(await r.json()); }catch(e){ return normalize(fallback); } }
 function getOverride(){ try{return JSON.parse(localStorage.getItem('oracle-admin-data')||'null')}catch(e){return null} }
 function effective(d){ return getOverride() || d; }
