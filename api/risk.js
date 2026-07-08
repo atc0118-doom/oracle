@@ -1,45 +1,33 @@
-
-const now = new Date();
-
-export default function handler(req,res){
-  res.setHeader('Cache-Control','s-maxage=300, stale-while-revalidate=600');
+export default async function handler(req,res){
+  res.setHeader('Cache-Control','s-maxage=900, stale-while-revalidate=1800');
   res.status(200).json({
     ok:true,
     global:38,
-    level:'WATCH',
+    status:'WATCH',
     delta:'+2 / 24H',
     confidence:84,
-    updated:now.toISOString(),
     brief:'Regional tensions remain elevated. Global escalation risk remains contained.',
     assessment:'Current global risk remains stable despite concentrated military activity in East Asia. Escalation signals remain limited.',
-    basis:{
-      score:'38 / 100',
-      text:'Index combines public reporting signals, regional concentration, escalation language and disruption indicators. It is an intelligence-style estimate, not a prediction.'
-    },
-    event:{
+    topEvent:{
+      region:'Taiwan Strait',
       source:'Reuters',
-      title:'Taiwan Strait',
       text:'Military activity increased around the region. No immediate global escalation signal detected.',
       url:'https://www.reuters.com/world/'
     },
-    drivers:[
-      {name:'Military', value:78, note:'Concentrated activity near East Asia and Eastern Europe'},
-      {name:'Logistics', value:15, note:'No broad disruption signal detected'},
-      {name:'Political', value:7, note:'Diplomatic friction remains present but contained'}
+    drivers:{military:78,diplomatic:42,cyber:31,logistics:18,finance:12},
+    regions:[
+      {name:'Taiwan Strait',score:64,change:'+2',note:'Military activity'},
+      {name:'Ukraine',score:59,change:'+1',note:'Active conflict'},
+      {name:'Middle East',score:56,change:'0',note:'Diplomatic pressure'},
+      {name:'South China Sea',score:48,change:'+1',note:'Maritime tension'},
+      {name:'Korea',score:42,change:'-1',note:'Watch level'}
     ],
-    ranking:[
-      {name:'Ukraine', score:72, change:'+4', reason:'active war / air alerts'},
-      {name:'Taiwan', score:68, change:'+2', reason:'military pressure'},
-      {name:'Iran', score:64, change:'0', reason:'regional tension'},
-      {name:'Russia', score:61, change:'-1', reason:'security posture'},
-      {name:'Israel', score:57, change:'+1', reason:'regional conflict'}
+    timeline:[
+      {time:'14:20', text:'Military aviation activity remains elevated around East Asia.'},
+      {time:'13:10', text:'Regional statements indicate continued diplomatic friction.'},
+      {time:'11:50', text:'No broad global escalation signal detected across monitored sources.'},
+      {time:'09:30', text:'Logistics and market stress remain contained.'}
     ],
-    signals:[
-      {label:'Active Conflicts', value:'7', detail:'Monitored'},
-      {label:'Military Flights', value:'Elevated', detail:'East Asia'},
-      {label:'Cyber Alerts', value:'Watch', detail:'No global surge'},
-      {label:'Logistics', value:'Stable', detail:'Contained'}
-    ],
-    sources:['Reuters','AP','BBC','NHK','GDELT','USGS']
+    sources:['Reuters','AP','BBC','NHK','Al Jazeera','GDELT','USGS','NASA']
   });
 }
