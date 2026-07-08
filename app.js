@@ -1,32 +1,46 @@
-const DATA={
-  global:38, delta:'+2', level:'WATCH', confidence:84,
-  brief:'Regional tensions remain elevated. Global escalation risk remains contained.',
-  assessment:'Current global risk remains stable despite concentrated military activity in East Asia. Escalation signals remain limited.',
-  event:{title:'Taiwan Strait',source:'Reuters',text:'Military activity increased around the region. No immediate global escalation signal detected.',url:'#'},
-  drivers:[['Military',78],['Logistics',15],['Political',7]],
-  ranking:[['Ukraine',72,'+4'],['Taiwan',68,'+2'],['Iran',64,'0'],['Russia',61,'-1'],['Israel',57,'+1']]
-};
+const ranking = [
+  {name:'Ukraine', score:72, change:'+4'},
+  {name:'Taiwan', score:68, change:'+2'},
+  {name:'Iran', score:64, change:'0'},
+  {name:'Russia', score:61, change:'-1'},
+  {name:'Israel', score:57, change:'+1'}
+];
+
 function $(id){return document.getElementById(id)}
-function render(data){
-  $('score').textContent=data.global;
-  $('state').textContent=data.level;
-  $('delta').textContent=`▲ ${data.delta} / 24H`;
-  $('updated').textContent=`UPDATED — ${new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} JST`;
-  $('brief').textContent=data.brief;
-  $('confidence').textContent=data.confidence+'%';
-  $('confidenceFill').style.width=data.confidence+'%';
-  $('assessment').textContent=data.assessment;
-  $('eventSource').textContent=data.event.source;
-  $('eventTitle').textContent=data.event.title;
-  $('eventText').textContent=data.event.text;
-  $('eventLink').href=data.event.url;
-  $('drivers').innerHTML=data.drivers.map(([name,val])=>`<div class="driver"><span>${name}</span><div><i style="width:${val}%"></i></div><strong>${val}%</strong></div>`).join('');
-  $('ranking').innerHTML=data.ranking.map(([name,score,change],i)=>`<div class="rank"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><div class="rankname">${name}</div><div class="rankmeta">${change==='0'?'→ 0':(change.startsWith('-')?'▼ ':'▲ ')+change.replace('-','')}</div></div><div class="rankscore">${score}</div><div class="rankbar"><i style="width:${score}%"></i></div></div>`).join('');
+function pad(n){return String(n).padStart(2,'0')}
+function updateTime(){
+  const d = new Date();
+  $('updated').textContent = `UPDATED — ${pad(d.getHours())}:${pad(d.getMinutes())} JST`;
+}
+function renderRanking(){
+  const root = $('ranking');
+  if(!root) return;
+  root.innerHTML = ranking.map((r,i)=>`
+    <div class="rank">
+      <div class="ranknum">${i+1}</div>
+      <div>
+        <div class="rankname">${r.name}</div>
+        <div class="rankmeta">${r.change==='0'?'→ 0':(r.change.startsWith('-')?'▼ ':'▲ ')+r.change.replace('-','')}</div>
+      </div>
+      <div class="rankscore">${r.score}</div>
+      <div class="rankbar"><i style="width:${r.score}%"></i></div>
+    </div>`).join('');
 }
 function makePost(type){
-  const t={morning:'Morning Brief',noon:'Midday Watch',night:'Night Report',alert:'Risk Alert'}[type]||'ORACLE Brief';
-  $('postText').value=`${t}\n\nGLOBAL RISK INDEX ${DATA.global} / ${DATA.level}\n${DATA.brief}\n\nTop Event: ${DATA.event.title}\nAI: ${DATA.assessment}\n\n#ORACLE #WorldRisk #世界情勢`;
+  const templates = {
+    morning:'【ORACLE Morning】\nGlobal Risk Index: 38 / WATCH\nRegional tensions remain elevated. Global escalation risk remains contained.\n#ORACLE #WorldRisk #Geopolitics',
+    noon:'【ORACLE Midday】\nGlobal risk remains stable at WATCH level. Primary pressure remains concentrated in East Asia.\n#ORACLE #WorldRisk #Intelligence',
+    night:'【ORACLE Night Report】\nRisk drivers: Military 78%, Logistics 15%, Political 7%. No immediate global escalation signal detected.\n#ORACLE #WorldRisk',
+    alert:'【ORACLE Alert】\nRisk level requires attention. Check latest regional signals and source updates.\n#ORACLE #RiskAlert'
+  };
+  $('postText').value = templates[type] || templates.morning;
 }
-async function copyPost(){await navigator.clipboard.writeText($('postText').value||'');}
-render(DATA);
-if(new URLSearchParams(location.search).get('admin')==='doom') $('admin').classList.add('open');
+async function copyPost(){
+  const t = $('postText');
+  t.select();
+  try{await navigator.clipboard.writeText(t.value)}catch(e){document.execCommand('copy')}
+}
+function initAdmin(){
+  if(new URLSearchParams(location.search).get('admin')==='doom') $('adminPanel')?.classList.add('open');
+}
+updateTime(); renderRanking(); initAdmin(); setInterval(updateTime,60000);

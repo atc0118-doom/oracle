@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ORACLE | World Risk Intelligence</title>
-  <meta name="description" content="ORACLE — World Risk Intelligence terminal." />
+  <meta name="description" content="World Risk Intelligence dashboard" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -17,7 +17,7 @@
       <div class="live"><span></span>LIVE</div>
     </header>
 
-    <section class="hero" aria-label="Global risk index">
+    <section class="hero">
       <div class="hero-center">
         <div class="label">GLOBAL RISK INDEX</div>
         <div class="score" id="score">38</div>
@@ -25,38 +25,29 @@
         <div class="delta" id="delta">▲ +2 / 24H</div>
         <div class="updated" id="updated">UPDATED — --:-- JST</div>
       </div>
-
       <div class="rule"></div>
-      <p class="brief" id="brief">Regional military tension remains elevated. No immediate global escalation detected.</p>
+      <p class="brief" id="brief">Regional tensions remain elevated. Global escalation risk remains contained.</p>
     </section>
 
     <section class="grid">
       <article class="card primary">
         <div class="card-head"><span>AI ASSESSMENT</span><strong id="confidence">84%</strong></div>
         <p id="assessment">Current global risk remains stable despite concentrated military activity in East Asia. Escalation signals remain limited.</p>
-        <div class="confidence-bar"><i id="confidenceFill" style="width:84%"></i></div>
+        <div class="confidence-bar"><i style="width:84%"></i></div>
       </article>
 
       <article class="card event">
-        <div class="card-head"><span>TOP EVENT</span><strong id="eventSource">Reuters</strong></div>
+        <div class="card-head"><span>TOP EVENT</span><strong>Reuters</strong></div>
         <h2 id="eventTitle">Taiwan Strait</h2>
         <p id="eventText">Military activity increased around the region. No immediate global escalation signal detected.</p>
-        <a id="eventLink" href="#" target="_blank" rel="noopener">READ SOURCE</a>
+        <a href="#">READ SOURCE</a>
       </article>
 
-      <article class="card">
+      <article class="card drivers">
         <div class="card-head"><span>RISK DRIVERS</span></div>
-        <div id="drivers"></div>
-      </article>
-
-      <article class="card trend">
-        <div class="card-head"><span>7-DAY SIGNAL</span><strong>LIVE</strong></div>
-        <svg viewBox="0 0 320 110" role="img" aria-label="7-day risk trend">
-          <line x1="0" y1="90" x2="320" y2="90"></line>
-          <line x1="0" y1="55" x2="320" y2="55"></line>
-          <line x1="0" y1="20" x2="320" y2="20"></line>
-          <polyline id="trendLine" points="8,70 60,74 112,68 164,61 216,58 268,52 312,44"></polyline>
-        </svg>
+        <div class="driver"><span>Military</span><div><i style="width:78%"></i></div><strong>78%</strong></div>
+        <div class="driver"><span>Logistics</span><div><i style="width:15%"></i></div><strong>15%</strong></div>
+        <div class="driver"><span>Political</span><div><i style="width:7%"></i></div><strong>7%</strong></div>
       </article>
 
       <article class="card ranking">
@@ -65,22 +56,22 @@
       </article>
     </section>
 
-    <section class="admin" id="admin">
-      <div class="card-head"><span>ADMIN TERMINAL</span><strong>PRIVATE</strong></div>
-      <div class="admin-buttons">
-        <button onclick="makePost('morning')">MORNING</button>
-        <button onclick="makePost('noon')">NOON</button>
-        <button onclick="makePost('night')">NIGHT</button>
-        <button onclick="makePost('alert')">ALERT</button>
-        <button onclick="copyPost()">COPY</button>
-      </div>
-      <textarea id="postText" rows="10" placeholder="Generated post will appear here."></textarea>
-    </section>
-
-    <footer class="sources">
+    <section class="sources">
       <span>Sources:</span>
       <b>Reuters</b><b>AP</b><b>BBC</b><b>NHK</b><b>GDELT</b><b>USGS</b>
-    </footer>
+    </section>
+
+    <section class="admin" id="adminPanel">
+      <div class="card-head"><span>ADMIN TERMINAL</span><strong>?admin=doom</strong></div>
+      <div class="admin-buttons">
+        <button onclick="makePost('morning')">朝</button>
+        <button onclick="makePost('noon')">昼</button>
+        <button onclick="makePost('night')">夜</button>
+        <button onclick="makePost('alert')">緊急</button>
+        <button onclick="copyPost()">コピー</button>
+      </div>
+      <textarea id="postText" rows="9">投稿生成待機中</textarea>
+    </section>
   </main>
   <script src="app.js"></script>
 </body>
