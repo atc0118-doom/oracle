@@ -1,3 +1,5 @@
-# ORACLE balance mid
+# ORACLE
 
-38ブロックを前回から3pxだけ右へ戻した微調整版。
+World Risk Intelligence.
+
+Silent Intelligence design build.
