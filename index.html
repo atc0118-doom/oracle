@@ -20,7 +20,7 @@
     <section class="hero reveal">
       <div class="hero-center">
         <div class="label">GLOBAL RISK INDEX</div>
-        <div class="score" id="score">38</div>
+        <button class="score score-button" id="score" type="button" aria-label="Open score calculation details">38</button>
         <div class="state" id="state">WATCH</div>
         <div class="delta" id="delta">▲ +2 / 24H</div>
         <div class="updated" id="updated">UPDATED — --:-- JST</div>
@@ -106,6 +106,21 @@
       <span>Real-time monitoring of publicly available global events.</span>
       <small id="footerSync">Last system update: --:--:-- JST</small>
     </footer>
+
+
+    <div class="calc-modal" id="calcModal" aria-hidden="true">
+      <div class="calc-modal-panel" role="dialog" aria-modal="true" aria-labelledby="calcModalTitle">
+        <button class="modal-close" id="calcClose" type="button" aria-label="Close">×</button>
+        <div class="card-head"><span id="calcModalTitle">WHY 38?</span><strong>SCORE MODEL</strong></div>
+        <p class="calc-copy">Global Risk Index is calculated from weighted public indicators, then reduced by containment factors when escalation remains regionally limited.</p>
+        <div id="modalBreakdownRows"></div>
+        <div class="formula-total modal-total">
+          <div><span>RAW SCORE</span><b id="modalRawScore">44.3</b></div>
+          <div><span>CONTAINMENT</span><b id="modalContainment">−6.3</b></div>
+          <div><span>FINAL</span><b id="modalFinalScore">38</b></div>
+        </div>
+      </div>
+    </div>
 
     <section class="admin" id="adminPanel">
       <div class="card-head"><span>ADMIN TERMINAL</span><strong>PRIVATE</strong></div>

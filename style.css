@@ -2,3 +2,72 @@
 
 .calc-copy{color:#c9ced5;line-height:1.75;margin:0 0 18px}.formula-row,.breakdown-row{display:grid;grid-template-columns:1fr 62px 72px;gap:12px;align-items:center;padding:12px 0;border-top:1px solid rgba(255,255,255,.065)}.formula-row:first-of-type,.breakdown-row:first-of-type{border-top:0}.formula-row span,.breakdown-row span{font-size:13px;color:#d7dce2}.formula-row em,.breakdown-row em{font-style:normal;color:var(--muted);font-size:12px;text-align:right}.formula-row b,.breakdown-row b{font-size:13px;text-align:right;color:#e7d27b}.formula-total{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.075)}.formula-total div{border:1px solid var(--line);border-radius:14px;padding:12px;background:rgba(255,255,255,.014)}.formula-total span{display:block;color:var(--muted);font-size:9px;letter-spacing:.16em}.formula-total b{display:block;margin-top:7px;font-size:20px;color:#f3f5f7}.breakdown-row.is-minus b{color:#9fd8b7}.breakdown-row.is-final b{font-size:18px;color:#f3f5f7}
 @media(max-width:720px){.formula-row,.breakdown-row{grid-template-columns:1fr 54px 62px}.formula-total{grid-template-columns:1fr}.formula-total b{font-size:18px}}
+
+
+.score-button{
+  appearance:none;
+  border:0;
+  background:transparent;
+  cursor:pointer;
+  font:inherit;
+  color:inherit;
+  padding:0;
+}
+.score-button:focus-visible{
+  outline:1px solid rgba(255,255,255,.32);
+  outline-offset:8px;
+  border-radius:18px;
+}
+.score-button::after{
+  content:"WHY 38?";
+  display:block;
+  margin-top:8px;
+  font-size:10px;
+  line-height:1;
+  letter-spacing:.22em;
+  color:var(--muted);
+  opacity:.72;
+  text-shadow:none;
+}
+.calc-modal{
+  position:fixed;
+  inset:0;
+  z-index:50;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:22px;
+  background:rgba(0,0,0,.62);
+  backdrop-filter:blur(10px);
+}
+.calc-modal.open{display:flex}
+.calc-modal-panel{
+  position:relative;
+  width:min(560px,100%);
+  max-height:86vh;
+  overflow:auto;
+  padding:20px;
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:22px;
+  background:linear-gradient(180deg,rgba(18,23,29,.98),rgba(10,13,17,.98));
+  box-shadow:0 24px 80px rgba(0,0,0,.55);
+}
+.modal-close{
+  position:absolute;
+  top:12px;
+  right:12px;
+  width:34px;
+  height:34px;
+  border:1px solid var(--line);
+  border-radius:50%;
+  background:rgba(255,255,255,.03);
+  color:var(--text);
+  font-size:22px;
+  line-height:1;
+}
+.modal-total{margin-top:18px}
+@media(max-width:720px){
+  .score-button::after{margin-top:10px;font-size:9px}
+  .calc-modal{padding:16px}
+  .calc-modal-panel{border-radius:18px;padding:17px}
+}

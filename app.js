@@ -14,12 +14,23 @@ const rows=formula.weights.map(w=>{const contribution=(w[1]*w[2]/100); return [w
 const raw=rows.reduce((a,r)=>a+r[3],0);
 const final=Math.max(0,Math.round(raw-formula.containment));
 if($('formulaRows')) $('formulaRows').innerHTML=rows.map(r=>`<div class="formula-row"><span>${r[0]}</span><em>${r[2]}%</em><b>+${r[3].toFixed(1)}</b></div>`).join('');
-if($('breakdownRows')) $('breakdownRows').innerHTML=[...rows.map(r=>`<div class="breakdown-row"><span>${r[0]}</span><em>${r[1]}</em><b>+${r[3].toFixed(1)}</b></div>`),`<div class="breakdown-row is-minus"><span>Containment</span><em>limited spread</em><b>−${formula.containment.toFixed(1)}</b></div>`,`<div class="breakdown-row is-final"><span>Final Score</span><em>0–100</em><b>${final}</b></div>`].join('');
+const breakdownHtml=[...rows.map(r=>`<div class="breakdown-row"><span>${r[0]}</span><em>${r[1]}</em><b>+${r[3].toFixed(1)}</b></div>`),`<div class="breakdown-row is-minus"><span>Containment</span><em>limited spread</em><b>−${formula.containment.toFixed(1)}</b></div>`,`<div class="breakdown-row is-final"><span>Final Score</span><em>0–100</em><b>${final}</b></div>`].join('');
+if($('breakdownRows')) $('breakdownRows').innerHTML=breakdownHtml;
+if($('modalBreakdownRows')) $('modalBreakdownRows').innerHTML=breakdownHtml;
 if($('rawScore')) $('rawScore').textContent=raw.toFixed(1);
 if($('containment')) $('containment').textContent='−'+formula.containment.toFixed(1);
 if($('finalScore')) $('finalScore').textContent=final;
+if($('modalRawScore')) $('modalRawScore').textContent=raw.toFixed(1);
+if($('modalContainment')) $('modalContainment').textContent='−'+formula.containment.toFixed(1);
+if($('modalFinalScore')) $('modalFinalScore').textContent=final;
 $('signals').innerHTML=data.signals.map(s=>`<div class="mini"><span>${s[0]}</span><b>${s[1]}</b><small>${s[2]}</small><em>STATUS ${s[3]||'NORMAL'}</em></div>`).join(''); const full=jstFull(); if($('lastSync')) $('lastSync').textContent=full+' JST'; if($('footerSync')) $('footerSync').textContent='Last system update: '+full+' JST';}
 async function load(){try{const res=await fetch('/api/risk.js?ts='+Date.now(),{cache:'no-store'}); const text=await res.text(); if(text.trim().startsWith('{')) render(JSON.parse(text)); else render(fallback);}catch(e){render(fallback)}}
+
+function openCalcModal(){const m=$('calcModal'); if(!m)return; m.classList.add('open'); m.setAttribute('aria-hidden','false')}
+function closeCalcModal(){const m=$('calcModal'); if(!m)return; m.classList.remove('open'); m.setAttribute('aria-hidden','true')}
+document.addEventListener('click',e=>{if(e.target&&e.target.id==='score')openCalcModal(); if(e.target&&e.target.id==='calcClose')closeCalcModal(); if(e.target&&e.target.id==='calcModal')closeCalcModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCalcModal()});
+
 function makePost(type){const top=current.topEvent; const base=`【ORACLE / ${type.toUpperCase()}】\n\nGlobal Risk Index: ${current.score} / ${current.state}\n${current.brief}\n\nTop Event: ${top.title}\nSource: ${top.source}\n\nRisk Drivers:\n${current.drivers.map(d=>`- ${d[0]} ${d[1]}`).join('\n')}\n\n#ORACLE #WorldRisk #Geopolitics #RiskIntelligence`; $('postText').value=base}
 async function copyPost(){const t=$('postText').value; try{await navigator.clipboard.writeText(t)}catch(e){}}
 if(location.search.includes('admin=doom')){$('adminPanel').classList.add('open');makePost('day')}
