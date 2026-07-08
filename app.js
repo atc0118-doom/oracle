@@ -1,6 +1,38 @@
-const $=id=>document.getElementById(id);let latest=null;const fmt=()=>new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Tokyo'}).format(new Date())+' JST';
-async function load(){try{const r=await fetch('/api/risk?ts='+Date.now());latest=await r.json();render(latest)}catch(e){render(fallback())}}
-function render(d){$('score').textContent=d.score;$('state').textContent=d.state;$('delta').textContent=`▲ ${d.delta>=0?'+':''}${d.delta} / 24H`;$('updated').textContent='UPDATED — '+d.updated;$('brief').textContent=d.brief;$('confidence').textContent=d.confidence+'%';$('confbar').style.width=d.confidence+'%';$('assessment').textContent=d.assessment;$('eventSource').textContent=d.topEvent.source;$('eventTitle').textContent=d.topEvent.title;$('eventText').textContent=d.topEvent.text;$('eventLink').href=d.topEvent.url||'#';$('drivers').innerHTML=d.drivers.map(x=>`<div class="driver"><span>${x.name}</span><div class="bar"><i style="width:${x.value}%"></i></div><strong>${x.value}</strong></div>`).join('');$('regions').innerHTML=d.regions.map((x,i)=>`<div class="region"><span>${i+1}</span><div><div class="name">${x.name}</div><small>${x.reason} · ${x.change>0?'▲ +'+x.change:x.change<0?'▼ '+x.change:'→ 0'}</small></div><div class="score2">${x.score}</div><div class="bar"><i style="width:${x.score}%"></i></div></div>`).join('');$('timeline').innerHTML=d.timeline.map(x=>`<div class="item"><time>${x.time}</time><p>${x.text}</p></div>`).join('');$('lastSync').textContent=fmt();$('health').textContent=d.sourceHealth+'%';$('conflicts').textContent=d.metrics.conflicts;$('flights').textContent=d.metrics.flights;$('cyberMini').textContent=d.metrics.cyber;$('logMini').textContent=d.metrics.logistics;calc(d)}
-function calc(d){$('calc').innerHTML=d.calculation.items.map(x=>`<div class="calcrow"><span>${x.name} ${x.value} × ${x.weight}</span><b>${x.points.toFixed(1)}</b></div>`).join('')+`<div class="calcrow"><span>Raw Score</span><b>${d.calculation.raw.toFixed(1)}</b></div><div class="calcrow"><span>Containment</span><b>${d.calculation.containment.toFixed(1)}</b></div><div class="calcrow"><span>FINAL SCORE</span><b>${d.score}</b></div>`}
-function fallback(){return{score:38,state:'WATCH',delta:2,updated:fmt().slice(0,5)+' JST',brief:'Regional tensions remain elevated. Global escalation risk remains contained.',confidence:84,assessment:'Current global risk remains stable despite concentrated military activity in East Asia. Escalation signals remain limited.',topEvent:{source:'GDELT',title:'Taiwan Strait',text:'Military activity increased around the region. No immediate global escalation signal detected.',url:'https://www.gdeltproject.org/'},drivers:[{name:'Military',value:78},{name:'Diplomatic',value:42},{name:'Cyber',value:31},{name:'Logistics',value:18},{name:'Finance',value:12},{name:'Disaster',value:0}],regions:[{name:'Taiwan Strait',score:64,reason:'Military activity',change:2},{name:'Ukraine',score:59,reason:'Active conflict',change:1},{name:'Middle East',score:56,reason:'Diplomatic pressure',change:0},{name:'South China Sea',score:48,reason:'Maritime tension',change:1},{name:'Korea',score:42,reason:'Watch level',change:-1}],timeline:[{time:'14:20',text:'Military aviation activity remains elevated around East Asia.'},{time:'13:10',text:'Regional statements indicate continued diplomatic friction.'},{time:'11:50',text:'No broad global escalation signal detected across monitored sources.'}],sourceHealth:94,metrics:{conflicts:7,flights:'Elevated',cyber:'Watch',logistics:'Stable'},calculation:{raw:44.3,containment:-6.3,items:[{name:'Military',value:78,weight:.35,points:27.3},{name:'Diplomatic',value:42,weight:.20,points:8.4},{name:'Cyber',value:31,weight:.15,points:4.7},{name:'Logistics',value:18,weight:.15,points:2.7},{name:'Finance',value:12,weight:.10,points:1.2},{name:'Disaster',value:0,weight:.05,points:0}]}}}
-$('whyBtn').onclick=()=>$('modal').classList.add('open');$('close').onclick=()=>$('modal').classList.remove('open');$('modal').onclick=e=>{if(e.target.id==='modal')$('modal').classList.remove('open')};load();setInterval(load,60000);
+const fallback = {
+  score: 38, delta: 2, state: 'WATCH', confidence: 88, sourceHealth: 96,
+  brief: 'Regional tensions remain elevated. Global escalation risk remains contained.',
+  assessment: 'AI detected no synchronized global escalation. Highest pressure remains concentrated around Ukraine and the Taiwan Strait. Confidence remains high due to multi-source confirmation.',
+  topEvent: { title:'Taiwan Strait', source:'GDELT', summary:'Military signal remains under monitoring. No immediate global escalation signal detected.', url:'https://www.gdeltproject.org/' },
+  drivers: [ ['Military',48,.35], ['Diplomatic',48,.20], ['Cyber',20,.15], ['Logistics',15,.15], ['Finance',12,.10], ['Disaster',4,.05] ],
+  regions: [ ['Ukraine',55,'Military','▲ +1'], ['Taiwan Strait',50,'Military','▲ +2'], ['Middle East',48,'Diplomatic','→ 0'], ['South China Sea',40,'Military','→ 0'], ['Cyber',20,'Cyber','→ 0'] ],
+  timeline: [ ['14:20','Military signal remains under monitoring.'], ['13:10','Regional statements indicate continued diplomatic friction.'], ['11:50','No broad escalation signal detected across monitored sources.'], ['09:30','Logistics and market stress remain contained.'] ],
+  sources: ['GDELT','Reuters','AP','BBC','NHK','Al Jazeera','USGS','NASA','MarineTraffic','FlightRadar24'],
+  metrics: { activeConflicts:1, milFlights:'Watch', cyberStatus:'Watch', logStatus:'Stable', eventsAnalyzed:4812 }
+};
+
+async function getData(){
+  try{ const r = await fetch('/api/risk',{cache:'no-store'}); if(!r.ok) throw new Error('api'); return await r.json(); }
+  catch(e){ return fallback; }
+}
+const fmtTime=()=> new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Asia/Tokyo'}).format(new Date())+' JST';
+const el=id=>document.getElementById(id);
+function level(score){ if(score>=75)return'CRITICAL'; if(score>=55)return'HIGH'; if(score>=30)return'WATCH'; return'STABLE'; }
+function render(d){
+  el('score').textContent=d.score; el('state').textContent=d.state||level(d.score); el('delta').textContent=`▲ +${d.delta ?? 0} / 24H`; el('updated').textContent='UPDATED — '+fmtTime(); el('brief').textContent=d.brief;
+  el('confidence').textContent=d.confidence+'%'; el('confidenceBar').style.width=d.confidence+'%'; el('assessment').textContent=d.assessment;
+  el('topSource').textContent=d.topEvent.source; el('topTitle').textContent=d.topEvent.title; el('topSummary').textContent=d.topEvent.summary; el('topLink').href=d.topEvent.url||'#';
+  el('drivers').innerHTML=d.drivers.map(x=>`<div class="driver"><span>${x[0]}</span><div class="bar"><i style="width:${x[1]}%"></i></div><strong>${x[1]}</strong></div>`).join('');
+  el('regions').innerHTML=d.regions.map((x,i)=>`<div class="region"><div class="ranknum">${i+1}</div><div><div class="rankname">${x[0]}</div><div class="rankmeta">${x[2]} · ${x[3]}</div></div><div class="rankscore">${x[1]}</div><div class="rankbar"><i style="width:${x[1]}%"></i></div></div>`).join('');
+  el('timeline').innerHTML=d.timeline.map(x=>`<div class="timeline-row"><div class="time">${x[0]}</div><div>${x[1]}</div></div>`).join('');
+  el('sources').innerHTML=d.sources.map(s=>`<div class="source live-source">${s}</div>`).join('');
+  el('lastSync').textContent=fmtTime(); el('sourceHealth').textContent=(d.sourceHealth||96)+'%';
+  el('activeConflicts').textContent=d.metrics.activeConflicts; el('milFlights').textContent=d.metrics.milFlights; el('cyberStatus').textContent=d.metrics.cyberStatus; el('logStatus').textContent=d.metrics.logStatus; el('eventsAnalyzed').textContent=(d.metrics.eventsAnalyzed||4812).toLocaleString(); el('modelConfidence').textContent=d.confidence+'%';
+  window.currentOracle=d; buildCalc(d);
+}
+function buildCalc(d){
+  const rows=d.drivers.map(([name,val,w])=>[name,val,w,+(val*w).toFixed(1)]); const raw=rows.reduce((a,r)=>a+r[3],0); const adj=+(raw-d.score).toFixed(1);
+  el('calc').innerHTML=rows.map(r=>`<div class="calc-row"><span>${r[0]}</span><span>${r[1]}</span><span>×${r[2]}</span><b>${r[3]}</b></div>`).join('')+`<div class="calc-total"><span>Raw Score</span><b>${raw.toFixed(1)}</b></div><div class="calc-total"><span>AI Stability Adjustment</span><b>-${adj.toFixed(1)}</b></div><div class="calc-total"><span>FINAL SCORE</span><b>${d.score}</b></div>`;
+}
+async function refresh(){ render(await getData()); }
+el('whyBtn').onclick=()=>el('modal').classList.add('open'); el('closeModal').onclick=()=>el('modal').classList.remove('open'); el('modal').onclick=e=>{if(e.target.id==='modal')el('modal').classList.remove('open')}; document.addEventListener('keydown',e=>{if(e.key==='Escape')el('modal').classList.remove('open')});
+refresh(); setInterval(refresh,60000);

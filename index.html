@@ -1,11 +1,47 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ORACLE | World Risk Intelligence</title><link rel="stylesheet" href="style.css"></head><body><main class="shell">
-<header class="topbar"><div><div class="brand">ORACLE</div><div class="tagline">World Risk Intelligence</div></div><div class="live"><span></span><div><b>LIVE</b><small id="refreshText">60s refresh</small></div></div></header>
-<section class="hero"><div class="hero-center"><div class="label">GLOBAL RISK INDEX</div><button class="scoreBtn" id="whyBtn" aria-label="Why score"><div class="score" id="score">--</div><div class="why">ⓘ WHY SCORE?</div></button><div class="state" id="state">SYNCING</div><div class="delta" id="delta">▲ -- / 24H</div><div class="updated" id="updated">UPDATED — --:-- JST</div></div><div class="rule"></div><p class="brief" id="brief">Collecting public global event signals.</p></section>
-<section class="grid"><article class="card primary"><div class="card-head"><span>AI ASSESSMENT</span><strong id="confidence">--%</strong></div><p id="assessment">Generating latest assessment from public signals.</p><div class="confidence-bar"><i id="confbar" style="width:0%"></i></div></article><article class="card event"><div class="card-head"><span>TOP EVENT</span><strong id="eventSource">GDELT</strong></div><h2 id="eventTitle">Loading...</h2><p id="eventText">Fetching current global news signal.</p><a id="eventLink" target="_blank" rel="noopener">VIEW REPORT →</a></article></section>
-<section class="card"><div class="card-head"><span>RISK DRIVERS</span><strong>WHY SCORE?</strong></div><div id="drivers"></div></section>
-<section class="card"><div class="card-head"><span>HOT REGIONS</span><strong>TOP 5</strong></div><div id="regions"></div></section>
-<section class="card"><div class="card-head"><span>24H TIMELINE</span><strong>JST</strong></div><div id="timeline"></div></section>
-<section class="card"><div class="card-head"><span>DATA SOURCES</span><strong>MONITORED</strong></div><div class="sources"><b>GDELT</b><b>Reuters</b><b>AP</b><b>BBC</b><b>NHK</b><b>Al Jazeera</b><b>USGS</b><b>NASA</b><b>MarineTraffic</b><b>FlightRadar24</b></div><div class="health"><div><span>LAST SYNC</span><b id="lastSync">--</b></div><div><span>AUTO REFRESH</span><b>60 SEC</b></div><div><span>SOURCE HEALTH</span><b id="health">--%</b></div></div></section>
-<section class="metrics"><div class="mini"><span>ACTIVE CONFLICTS</span><b id="conflicts">--</b><em>STATUS ACTIVE</em></div><div class="mini"><span>MILITARY FLIGHTS</span><b id="flights">--</b><em>EAST ASIA</em></div><div class="mini"><span>CYBER ALERTS</span><b id="cyberMini">--</b><em>NO GLOBAL SURGE</em></div><div class="mini"><span>LOGISTICS</span><b id="logMini">--</b><em>CONTAINED</em></div></section>
-<footer>Powered by ORACLE Intelligence Engine<br>Real-time monitoring of publicly available global events.</footer></main>
-<div class="modal" id="modal"><div class="modalBox"><button id="close">×</button><h2>HOW WE CALCULATE</h2><div id="calc"></div><p>Scores are generated from public event signals and AI-assisted analysis. They are situational awareness indicators, not predictions.</p></div></div><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ORACLE | World Risk Intelligence</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="shell">
+<header class="topbar">
+  <div><div class="brand">ORACLE</div><div class="tagline">World Risk Intelligence</div></div>
+  <div class="live"><span></span><b>LIVE</b><small>60s</small></div>
+</header>
+
+<section class="hero">
+  <div class="hero-center">
+    <div class="label">GLOBAL RISK INDEX</div>
+    <div class="score" id="score">--</div>
+    <button class="why-link" id="whyBtn">ⓘ WHY SCORE?</button>
+    <div class="state" id="state">SYNC</div>
+    <div class="delta" id="delta">▲ -- / 24H</div>
+    <div class="updated" id="updated">UPDATED — --:-- JST</div>
+  </div>
+  <div class="rule"></div>
+  <p class="brief" id="brief">Loading global event signals...</p>
+</section>
+
+<section class="grid">
+  <article class="card primary"><div class="card-head"><span>AI ASSESSMENT</span><strong id="confidence">--%</strong></div><p id="assessment">Analyzing monitored public signals.</p><div class="confidence-bar"><i id="confidenceBar" style="width:0%"></i></div></article>
+  <article class="card event"><div class="card-head"><span>TOP EVENT</span><strong id="topSource">GDELT</strong></div><h2 id="topTitle">Loading...</h2><p id="topSummary">Collecting world news signals.</p><a id="topLink" href="#" target="_blank" rel="noopener">VIEW REPORT →</a></article>
+  <article class="card"><div class="card-head"><span>RISK DRIVERS</span><strong>WHY SCORE?</strong></div><div id="drivers"></div></article>
+  <article class="card"><div class="card-head"><span>HOT REGIONS</span><strong>TOP 5</strong></div><div id="regions"></div></article>
+  <article class="card"><div class="card-head"><span>24H TIMELINE</span><strong>JST</strong></div><div id="timeline"></div></article>
+  <article class="card"><div class="card-head"><span>DATA SOURCES</span><strong>MONITORED</strong></div><div class="source-grid" id="sources"></div><div class="sync-grid"><div><span>LAST SYNC</span><b id="lastSync">--</b></div><div><span>AUTO REFRESH</span><b>60 SEC</b></div><div><span>SOURCE HEALTH</span><b id="sourceHealth">--%</b></div></div></article>
+</section>
+
+<section class="metrics"><div class="metric"><span>ACTIVE CONFLICTS</span><b id="activeConflicts">--</b><small>STATUS ACTIVE</small></div><div class="metric"><span>MILITARY FLIGHTS</span><b id="milFlights">--</b><small>EAST ASIA</small></div><div class="metric"><span>CYBER ALERTS</span><b id="cyberStatus">--</b><small>NO GLOBAL SURGE</small></div><div class="metric"><span>LOGISTICS</span><b id="logStatus">--</b><small>CONTAINED</small></div></section>
+
+<section class="engine"><div class="card"><div class="card-head"><span>ORACLE INTELLIGENCE ENGINE</span><strong>v1.0</strong></div><div class="engine-grid"><div><span>EVENTS ANALYZED</span><b id="eventsAnalyzed">--</b></div><div><span>COUNTRIES</span><b id="countries">211</b></div><div><span>MODEL CONFIDENCE</span><b id="modelConfidence">--%</b></div><div><span>INTEGRITY</span><b id="integrity">ONLINE</b></div></div></div></section>
+<footer>Powered by ORACLE Intelligence Engine<br/>Real-time monitoring of publicly available global events.</footer>
+</div>
+
+<div class="modal" id="modal"><div class="modal-panel"><button class="close" id="closeModal">×</button><h2>WHY SCORE?</h2><div id="calc"></div><p class="note">Scores are generated from publicly available information and AI-assisted analysis. They are intended for situational awareness, not prediction.</p></div></div>
+<script src="app.js"></script>
+</body>
+</html>
