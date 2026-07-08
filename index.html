@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ORACLE | Global Risk Intelligence</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="boot" id="boot">ORACLE // ONLINE</div>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="brand">ORACLE</div>
+        <div class="sub">Global Risk Intelligence Dashboard</div>
+      </div>
+      <div class="status"><span></span><b id="updated">Updated --</b></div>
+    </header>
+
+    <section class="hero card">
+      <div class="risk-core">
+        <div class="eyebrow">GLOBAL RISK INDEX</div>
+        <div class="score" id="score">38</div>
+        <div class="level" id="level">LEVEL II / WATCH</div>
+        <div class="delta" id="delta">▲ +2 / 24H</div>
+      </div>
+      <div class="scale" aria-label="Risk scale">
+        <div class="bar"><i id="pointer"></i></div>
+        <div class="scale-labels"><span>SAFE</span><span>WATCH</span><span>ALERT</span><span>HIGH</span><span>CRITICAL</span></div>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <article class="card outlook">
+        <div class="eyebrow">AI OUTLOOK</div>
+        <p class="danger">HIGHEST CONCERN</p>
+        <h2 id="concern">Taiwan Strait</h2>
+        <p id="outlookText">Military activity and diplomatic friction are increasing simultaneously.</p>
+        <div class="drivers" id="drivers"></div>
+        <div class="confidence"><small>CONFIDENCE</small><strong id="confidence">84%</strong><div><i style="width:84%"></i></div></div>
+      </article>
+
+      <article class="card event">
+        <div class="row"><div class="eyebrow">TOP EVENT</div><a id="eventSource" href="#" target="_blank" rel="noreferrer">Reuters</a></div>
+        <h2 id="eventTitle">Military drills continue near Taiwan Strait as tensions rise.</h2>
+        <p id="eventSummary">Latest reporting indicates elevated military activity and continued regional concern.</p>
+        <div class="row muted"><span id="eventTime">Updated 12 min ago</span><a id="readMore" href="#" target="_blank" rel="noreferrer">READ MORE ›</a></div>
+      </article>
+    </section>
+
+    <section class="card why">
+      <div>
+        <div class="eyebrow">WHY?</div>
+        <p>Risk increased by</p>
+        <strong id="whyDelta">+3</strong>
+      </div>
+      <div class="breakdown" id="breakdown"></div>
+      <div class="trend"><canvas id="trend" width="420" height="150"></canvas></div>
+    </section>
+
+    <section class="card ranking">
+      <div class="row"><div class="eyebrow">GLOBAL RISK RANKING</div><span class="muted">TOP 5</span></div>
+      <div class="rank-list" id="ranking"></div>
+    </section>
+
+    <section class="card admin" id="admin">
+      <div class="row"><div class="eyebrow">ADMIN TERMINAL</div><span class="muted">hidden public</span></div>
+      <div class="buttons">
+        <button onclick="makePost('morning')">Morning</button>
+        <button onclick="makePost('midday')">Midday</button>
+        <button onclick="makePost('night')">Night</button>
+        <button onclick="makePost('alert')">Alert</button>
+        <button onclick="copyPost()">Copy</button>
+      </div>
+      <textarea id="post" rows="10" placeholder="Generate post..."></textarea>
+    </section>
+
+    <footer class="sources card">
+      <span>SOURCES</span><a>Reuters</a><a>AP</a><a>BBC</a><a>NHK</a><a>USGS</a><a>GDELT</a><small>powered by 終末観測盤</small>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
