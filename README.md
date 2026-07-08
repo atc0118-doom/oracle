@@ -1,2 +1,5 @@
 # ORACLE
-Final polish: glow, live pulse, card polish, scroll reveal, operational signals.
+
+World Risk Intelligence dashboard.
+
+This build adds content logic: risk basis, drivers, ranking reasons, source-aware top event, operational signals and admin post generation.

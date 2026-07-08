@@ -37,23 +37,26 @@
       </article>
 
       <article class="card event">
-        <div class="card-head"><span>TOP EVENT</span><strong>Reuters</strong></div>
+        <div class="card-head"><span>TOP EVENT</span><strong id="eventSource">Reuters</strong></div>
         <h2 id="eventTitle">Taiwan Strait</h2>
         <p id="eventText">Military activity increased around the region. No immediate global escalation signal detected.</p>
-        <a href="#">READ SOURCE</a>
+        <a id="eventLink" href="#" target="_blank" rel="noopener">READ SOURCE</a>
       </article>
 
       <article class="card drivers">
-        <div class="card-head"><span>RISK DRIVERS</span></div>
-        <div class="driver"><span>Military</span><div><i style="width:78%"></i></div><strong>78%</strong></div>
-        <div class="driver"><span>Logistics</span><div><i style="width:15%"></i></div><strong>15%</strong></div>
-        <div class="driver"><span>Political</span><div><i style="width:7%"></i></div><strong>7%</strong></div>
+        <div class="card-head"><span>RISK DRIVERS</span><strong id="driverTotal">+2 / 24H</strong></div>
+        <div id="drivers"></div>
       </article>
 
       <article class="card ranking">
         <div class="card-head"><span>GLOBAL RISK RANKING</span><strong>TOP 5</strong></div>
         <div id="ranking"></div>
       </article>
+    </section>
+
+    <section class="method card">
+      <div class="card-head"><span>INDEX BASIS</span><strong id="basisScore">38 / 100</strong></div>
+      <p id="basisText">Index combines public reporting signals, regional concentration, escalation language and disruption indicators. It is an intelligence-style estimate, not a prediction.</p>
     </section>
 
     <section class="signals" aria-label="Operational signals">

@@ -246,3 +246,6 @@ body:after{
   .driver{grid-template-columns:78px 1fr 36px}
   .admin-buttons{grid-template-columns:1fr 1fr}
 }
+
+.method{max-width:none}.method p{max-width:760px}
+@media(max-width:720px){.signals{grid-template-columns:1fr 1fr}.signal strong{font-size:15px}.method{padding:17px}}
