@@ -133,7 +133,7 @@ body:after{
   letter-spacing:.17em;
   font-weight:720;
   color:var(--yellow);
-  transform:translateX(6px);
+  transform:translateX(4px);
 }
 
 .delta{margin-top:15px;color:#d9dde3;font-size:13px;letter-spacing:.12em}
@@ -247,5 +247,43 @@ body:after{
   .admin-buttons{grid-template-columns:1fr 1fr}
 }
 
-.method{max-width:none}.method p{max-width:760px}
-@media(max-width:720px){.signals{grid-template-columns:1fr 1fr}.signal strong{font-size:15px}.method{padding:17px}}
+/* ORACLE content expansion: top event / drivers / hot regions / timeline / sources */
+.timeline-item{
+  display:grid;
+  grid-template-columns:58px 1fr;
+  gap:14px;
+  padding:13px 0;
+  border-top:1px solid rgba(255,255,255,.065);
+}
+.timeline-item:first-child{border-top:0;padding-top:0}
+.timeline-time{
+  color:#d9dde3;
+  font-size:12px;
+  letter-spacing:.12em;
+}
+.timeline-text{
+  color:#cdd2d8;
+  font-size:14px;
+  line-height:1.55;
+}
+.source-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.source-grid b{
+  display:block;
+  color:#d4d9df;
+  border:1px solid rgba(255,255,255,.095);
+  border-radius:999px;
+  padding:10px 12px;
+  font-size:11px;
+  letter-spacing:.12em;
+  text-align:center;
+  background:rgba(255,255,255,.018);
+}
+@media(max-width:720px){
+  .timeline-item{grid-template-columns:52px 1fr;gap:12px}
+  .timeline-text{font-size:13px}
+  .source-grid{grid-template-columns:1fr 1fr}
+}
