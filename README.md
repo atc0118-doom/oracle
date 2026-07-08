@@ -1,2 +1,2 @@
 # ORACLE
-World Risk Intelligence
+Final polish: glow, live pulse, card polish, scroll reveal, operational signals.
