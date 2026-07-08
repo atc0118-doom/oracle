@@ -65,6 +65,11 @@
       <article class="card reveal">
         <div class="card-head"><span>DATA SOURCES</span><strong>MONITORED</strong></div>
         <div class="source-grid" id="sources"></div>
+        <div class="sync-grid">
+          <div><span>LAST SYNC</span><b id="lastSync">--:--:-- JST</b></div>
+          <div><span>AUTO REFRESH</span><b>60 SEC</b></div>
+          <div><span>SOURCE HEALTH</span><b>100%</b></div>
+        </div>
       </article>
     </section>
 
@@ -75,6 +80,12 @@
       <div><b>Refresh</b><span id="refresh">Auto update every 60 seconds</span></div>
       <div><b>Integrity</b><span id="integrity">Fallback mode available</span></div>
     </section>
+
+    <footer class="footer reveal">
+      <b>Powered by ORACLE Intelligence Engine</b>
+      <span>Real-time monitoring of publicly available global events.</span>
+      <small id="footerSync">Last system update: --:--:-- JST</small>
+    </footer>
 
     <section class="admin" id="adminPanel">
       <div class="card-head"><span>ADMIN TERMINAL</span><strong>PRIVATE</strong></div>

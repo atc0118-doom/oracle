@@ -1,6 +1,8 @@
 # ORACLE
-World Risk Intelligence
 
-Silent intelligence dashboard with auto refresh, source visibility, risk drivers, hot regions, 24H timeline, and admin post generator.
+Realtime complete revision.
 
-Admin: `?admin=doom`
+- Corrected Al Jazeera
+- Added MarineTraffic / FlightRadar24
+- Added Last Sync / Auto Refresh / Source Health
+- Added status labels and footer
