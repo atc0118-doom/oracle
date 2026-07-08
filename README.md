@@ -1,3 +1,3 @@
-# ORACLE
+# ORACLE balance mid
 
-Balance-left micro adjustment.
+38ブロックを前回から3pxだけ右へ戻した微調整版。
