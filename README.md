@@ -1,2 +1,2 @@
 # ORACLE
-World Risk Intelligence
+World Risk Intelligence — polished product-grade build.

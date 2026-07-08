@@ -1,6 +1,6 @@
 const DATA={
   global:38, delta:'+2', level:'WATCH', confidence:84,
-  brief:'Regional military tension remains elevated. No immediate global escalation detected.',
+  brief:'Regional tensions remain elevated. Global escalation risk remains contained.',
   assessment:'Current global risk remains stable despite concentrated military activity in East Asia. Escalation signals remain limited.',
   event:{title:'Taiwan Strait',source:'Reuters',text:'Military activity increased around the region. No immediate global escalation signal detected.',url:'#'},
   drivers:[['Military',78],['Logistics',15],['Political',7]],
