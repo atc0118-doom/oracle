@@ -1,36 +1,55 @@
-const fallback={score:38,state:'WATCH',delta:'+2 / 24H',brief:'Regional tensions remain elevated. Global escalation risk remains contained.',confidence:84,assessment:'Current global risk remains stable despite concentrated military activity in East Asia. Escalation signals remain limited.',topEvent:{title:'Taiwan Strait',source:'Reuters',summary:'Military activity increased around the region. No immediate global escalation signal detected.',url:'https://www.reuters.com/'},drivers:[['Military',78],['Diplomatic',42],['Cyber',31],['Logistics',18],['Finance',12]],regions:[['Taiwan Strait',64,'Military activity · ▲ +2'],['Ukraine',59,'Active conflict · ▲ +1'],['Middle East',56,'Diplomatic pressure · → 0'],['South China Sea',48,'Maritime tension · ▲ +1'],['Korea',42,'Watch level · ▼ 1']],timeline:[['14:20','Military aviation activity remains elevated around East Asia.'],['13:10','Regional statements indicate continued diplomatic friction.'],['11:50','No broad global escalation signal detected across monitored sources.'],['09:30','Logistics and market stress remain contained.']],sources:['Reuters','AP','BBC','NHK','Al Jazeera','GDELT','USGS','NASA','MarineTraffic','FlightRadar24'],signals:[['ACTIVE CONFLICTS','7','Monitored','ACTIVE'],['MILITARY FLIGHTS','Elevated','East Asia','HIGH'],['CYBER ALERTS','Watch','No global surge','LOW'],['LOGISTICS','Stable','Contained','NORMAL']]};
-let current=fallback;
-function $(id){return document.getElementById(id)}
-function jst(){return new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tokyo'})}
-function jstFull(){return new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Tokyo'})}
-function animateScore(next){const el=$('score');const start=Number(el.textContent)||next;const diff=next-start;let t=0;const timer=setInterval(()=>{t+=1;el.textContent=Math.round(start+diff*(t/12));if(t>=12){el.textContent=next;clearInterval(timer)}},24)}
-function render(data){current=data;animateScore(Number(data.score||38));$('state').textContent=data.state||'WATCH';$('delta').textContent='▲ '+(data.delta||'+2 / 24H');$('updated').textContent='UPDATED — '+jst()+' JST';$('brief').textContent=data.brief;$('confidence').textContent=data.confidence+'%';$('confidenceBar').style.width=data.confidence+'%';$('assessment').textContent=data.assessment;$('topTitle').textContent=data.topEvent.title;$('topSource').textContent=data.topEvent.source;$('topSummary').textContent=data.topEvent.summary;$('topLink').href=data.topEvent.url;
-$('drivers').innerHTML=data.drivers.map(d=>`<div class="driver"><span>${d[0]}</span><div><i style="width:${d[1]}%"></i></div><strong>${d[1]}</strong></div>`).join('');
-$('regions').innerHTML=data.regions.map((r,i)=>`<div class="region"><div class="region-no">${i+1}</div><div><div class="region-name">${r[0]}</div><div class="region-meta">${r[2]}</div></div><div class="region-score">${r[1]}</div><div class="rankbar"><i style="width:${r[1]}%"></i></div></div>`).join('');
-$('timeline').innerHTML=data.timeline.map(t=>`<div class="time-row"><b>${t[0]}</b><span>${t[1]}</span></div>`).join('');
-$('sources').innerHTML=data.sources.map(s=>`<b>${s}</b>`).join('');
-$('signals').innerHTML=data.signals.map(s=>`<div class="mini"><span>${s[0]}</span><b>${s[1]}</b><small>${s[2]}</small><em>STATUS ${s[3]||'NORMAL'}</em></div>`).join(''); const full=jstFull(); if($('lastSync')) $('lastSync').textContent=full+' JST'; if($('footerSync')) $('footerSync').textContent='Last system update: '+full+' JST';}
-async function load(){try{const res=await fetch('/api/risk.js?ts='+Date.now(),{cache:'no-store'}); const text=await res.text(); if(text.trim().startsWith('{')) render(JSON.parse(text)); else render(fallback);}catch(e){render(fallback)}}
-function makePost(type){const top=current.topEvent; const base=`【ORACLE / ${type.toUpperCase()}】\n\nGlobal Risk Index: ${current.score} / ${current.state}\n${current.brief}\n\nTop Event: ${top.title}\nSource: ${top.source}\n\nRisk Drivers:\n${current.drivers.map(d=>`- ${d[0]} ${d[1]}`).join('\n')}\n\n#ORACLE #WorldRisk #Geopolitics #RiskIntelligence`; $('postText').value=base}
-async function copyPost(){const t=$('postText').value; try{await navigator.clipboard.writeText(t)}catch(e){}}
-if(location.search.includes('admin=doom')){$('adminPanel').classList.add('open');makePost('day')}
-
-function openModal(){const m=$('scoreModal'); if(m){m.classList.add('open'); m.setAttribute('aria-hidden','false'); renderCalc(current)}}
-function closeModal(){const m=$('scoreModal'); if(m){m.classList.remove('open'); m.setAttribute('aria-hidden','true')}}
-function renderCalc(data){
-  const weights={Military:.35,Diplomatic:.20,Cyber:.15,Logistics:.15,Finance:.10,Disaster:.05};
-  const rows=['Military','Diplomatic','Cyber','Logistics','Finance','Disaster'].map(name=>{
-    const found=(data.drivers||[]).find(d=>d[0]===name); const val=found?Number(found[1]):0; const pts=val*(weights[name]||0);
-    return {name,val,weight:weights[name]||0,pts};
-  });
-  const raw=rows.reduce((a,r)=>a+r.pts,0); const final=Number(data.score||38); const containment=final-raw;
-  if($('calcList')) $('calcList').innerHTML=rows.map(r=>`<div class="calc-row"><span>${r.name}</span><small>${r.val} × ${r.weight.toFixed(2)}</small><b>${r.pts.toFixed(1)}</b></div>`).join('');
-  if($('rawScore')) $('rawScore').textContent=raw.toFixed(1);
-  if($('containmentScore')) $('containmentScore').textContent=(containment<0?'−':'')+Math.abs(containment).toFixed(1);
-  if($('finalScore')) $('finalScore').textContent=final;
+const $ = (id) => document.getElementById(id);
+const FALLBACK = {
+  ok:false, sourceHealth:72, integrity:'FALLBACK', score:38, previousScore:36, state:'WATCH', confidence:84,
+  brief:'Regional tensions remain elevated. Global escalation risk remains contained.',
+  assessment:'Current global risk remains stable despite concentrated military activity in East Asia. Escalation signals remain limited.',
+  topEvent:{title:'Taiwan Strait', source:'GDELT', summary:'Military activity increased around the region. No immediate global escalation signal detected.', url:'https://www.gdeltproject.org/'},
+  drivers:{Military:78,Diplomatic:42,Cyber:31,Logistics:18,Finance:12,Disaster:0},
+  weights:{Military:.35,Diplomatic:.20,Cyber:.15,Logistics:.15,Finance:.10,Disaster:.05},
+  containment:6.3,
+  regions:[['Taiwan Strait',64,'Military activity · ▲ +2'],['Ukraine',59,'Active conflict · ▲ +1'],['Middle East',56,'Diplomatic pressure · → 0'],['South China Sea',48,'Maritime tension · ▲ +1'],['Korea',42,'Watch level · ▼ 1']],
+  timeline:[['14:20','Military aviation activity remains elevated around East Asia.'],['13:10','Regional statements indicate continued diplomatic friction.'],['11:50','No broad global escalation signal detected across monitored sources.'],['09:30','Logistics and market stress remain contained.']],
+  sources:['Reuters','AP','BBC','NHK','Al Jazeera','GDELT','USGS','NASA','MarineTraffic','FlightRadar24'],
+  statusCards:[['ACTIVE CONFLICTS','7','ACTIVE','Monitored'],['MILITARY FLIGHTS','Elevated','HIGH','East Asia'],['CYBER ALERTS','Watch','LOW','No global surge'],['LOGISTICS','Stable','NORMAL','Contained']]
+};
+let currentData = FALLBACK;
+let lastSync = new Date();
+function jst(date=new Date()){return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(date)+' JST'}
+function hhmm(date=new Date()){return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit',hour12:false}).format(date)+' JST'}
+function scoreState(score){ if(score>=80)return 'CRITICAL'; if(score>=65)return 'HIGH'; if(score>=50)return 'ALERT'; if(score>=30)return 'WATCH'; return 'STABLE'; }
+function render(data){
+  currentData=data; lastSync=new Date();
+  $('score').textContent=data.score;
+  $('state').textContent=data.state || scoreState(data.score);
+  const delta=data.score-(data.previousScore??data.score); $('delta').textContent=`${delta>=0?'▲':'▼'} ${delta>=0?'+':''}${delta} / 24H`;
+  $('updated').textContent=`UPDATED — ${hhmm(lastSync)}`; $('lastSync').textContent=jst(lastSync);
+  $('sourceHealth').textContent=(data.sourceHealth??100)+'%'; $('integrity').textContent=data.integrity || (data.ok?'VERIFIED':'FALLBACK');
+  $('brief').textContent=data.brief; $('confidence').textContent=data.confidence+'%'; $('confidenceBar').style.width=data.confidence+'%'; $('assessment').textContent=data.assessment;
+  $('topSource').textContent=data.topEvent.source; $('topTitle').textContent=data.topEvent.title; $('topSummary').textContent=data.topEvent.summary; $('topLink').href=data.topEvent.url || '#';
+  $('drivers').innerHTML=Object.entries(data.drivers).map(([k,v])=>`<div class="driver"><span>${k}</span><div><i style="width:${v}%"></i></div><strong>${v}</strong></div>`).join('');
+  $('regions').innerHTML=data.regions.map((r,i)=>`<div class="region"><div class="region-num">${i+1}</div><div><div class="region-name">${r[0]}</div><div class="region-meta">${r[2]}</div></div><div class="region-score">${r[1]}</div><div class="regionbar"><i style="width:${Math.min(100,r[1])}%"></i></div></div>`).join('');
+  $('timeline').innerHTML=data.timeline.map(t=>`<div class="timeline-item"><div class="timeline-time">${t[0]}</div><div class="timeline-text">${t[1]}</div></div>`).join('');
+  $('sources').innerHTML=data.sources.map(s=>`<b>${s}</b>`).join('');
+  $('statusCards').innerHTML=data.statusCards.map(c=>`<div class="mini"><span>${c[0]}</span><strong>${c[1]}</strong><b>${c[2]}</b><em>${c[3]}</em></div>`).join('');
+  renderCalc(data);
+  const post=`ORACLE / World Risk Intelligence\nGlobal Risk Index: ${data.score} (${data.state})\n${data.brief}\nTop Event: ${data.topEvent.title} — ${data.topEvent.source}\nConfidence: ${data.confidence}%\nUpdated: ${jst(lastSync)}\n#ORACLE #WorldRisk #Geopolitics`;
+  $('adminOutput').value=post;
 }
-if($('whyScore')) $('whyScore').addEventListener('click',openModal);
-document.addEventListener('click',e=>{if(e.target && e.target.dataset && e.target.dataset.close==='scoreModal') closeModal()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape') closeModal()});
-
-load();setInterval(load,60000);setInterval(()=>{const full=jstFull(); $('updated').textContent='UPDATED — '+jst()+' JST'; if($('lastSync')) $('lastSync').textContent=full+' JST'; if($('footerSync')) $('footerSync').textContent='Last system update: '+full+' JST'},30000);
+function renderCalc(data){
+  const rows=Object.entries(data.drivers).map(([k,v])=>{const w=data.weights[k]??0;return {k,v,w,pts:v*w};});
+  $('calcRows').innerHTML=rows.map(r=>`<div class="calc-row"><span>${r.k} ${r.v} × ${r.w.toFixed(2)}</span><b>${r.pts.toFixed(1)}</b></div>`).join('');
+  const raw=rows.reduce((a,r)=>a+r.pts,0); $('rawScore').textContent=raw.toFixed(1); $('containment').textContent='−'+(data.containment??0).toFixed(1); $('finalScore').textContent=data.score;
+}
+async function refresh(){
+  try{ const r=await fetch('/api/risk?ts='+Date.now(),{cache:'no-store'}); if(!r.ok)throw new Error('api'); const data=await r.json(); render({...FALLBACK,...data}); }
+  catch(e){ render({...FALLBACK, integrity:'FALLBACK', sourceHealth:72}); }
+}
+$('whyBtn').addEventListener('click',()=>{$('scoreModal').classList.add('open');$('scoreModal').setAttribute('aria-hidden','false')});
+$('closeModal').addEventListener('click',()=>{$('scoreModal').classList.remove('open')});
+$('scoreModal').addEventListener('click',(e)=>{if(e.target.id==='scoreModal')$('scoreModal').classList.remove('open')});
+document.addEventListener('keydown',(e)=>{if(e.key==='Escape')$('scoreModal').classList.remove('open')});
+$('copyPost')?.addEventListener('click',()=>navigator.clipboard.writeText($('adminOutput').value));
+$('copyJson')?.addEventListener('click',()=>navigator.clipboard.writeText(JSON.stringify(currentData,null,2)));
+$('forceRefresh')?.addEventListener('click',refresh);
+if(new URLSearchParams(location.search).get('admin')==='doom') $('adminPanel').classList.add('open');
+refresh(); setInterval(refresh,60000);
