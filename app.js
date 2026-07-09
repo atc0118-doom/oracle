@@ -23,7 +23,7 @@ const fallback = {
   sourceConfidence: { availableSources:['GDELT'], limitedSources:[], note:'Public sources are monitored for situational awareness.' },
   verifiedSources: ['GDELT'],
   topEvent: { title: 'Global signals under monitoring', summary: 'Public signals are monitored as source-bound risk inputs.', source: 'GDELT', url: 'https://www.gdeltproject.org/' },
-  contributors: [{name:'Ukraine', share:0, impact:0, score:0, trend:'No verified signal', signals:0, sources:0}, {name:'Middle East', share:0, impact:0, score:0, trend:'No verified signal', signals:0, sources:0}, {name:'Taiwan Strait', share:0, impact:0, score:0, trend:'No verified signal', signals:0, sources:0}],
+  contributors: [{name:'Ukraine', share:38, impact:12, score:56, trend:'Watch'}, {name:'Middle East', share:31, impact:9, score:45, trend:'Watch'}, {name:'Taiwan Strait', share:18, impact:5, score:49, trend:'Watch'}],
   scoreBridge: { raw:32.6, stability:-2, duplicateNoise:0, globalNormalization:-2.6, final:28, note:'Raw weighted drivers are adjusted for duplicate noise, regional concentration, and global synchronization.' },
   drivers: { Military: 42, Diplomatic: 32, Cyber: 18, Logistics: 12, Finance: 9, Disaster: 6 },
   calculation: { raw: 32.6, containment: -4.6, final: 28, lines: [] },
@@ -43,7 +43,6 @@ const fallback = {
 };
 
 function clamp(n,min,max){ return Math.max(min, Math.min(max, Number(n)||0)); }
-function round1(n){ return Math.round(Number(n||0)*10)/10; }
 function fmtTime(iso){
   const d = iso ? new Date(iso) : new Date();
   return d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit', timeZone:'Asia/Tokyo' }) + ' JST';
@@ -168,27 +167,19 @@ function evidenceStrengthFromData(data){
 function renderContributors(contributors){
   const el = $('contributors');
   if(!el) return;
-  const list = (contributors || []).slice(0,5).map(c=>{
-    const signals = round1(c.signals ?? c.raw ?? c.count ?? 0);
-    const sources = Number(c.sources || 0);
-    const hasEvidence = signals > 0 && sources > 0;
-    return {
-      ...c,
-      signals: hasEvidence ? signals : 0,
-      sources: hasEvidence ? sources : 0,
-      impact: hasEvidence ? round1(c.impact || 0) : 0,
-      score: hasEvidence ? (c.score || c.share || 0) : 0,
-      trend: hasEvidence ? (c.trend || 'Watch') : 'No verified signal'
-    };
-  });
-  el.innerHTML = list.map((c,i)=>`
+  const list = (contributors || []).slice(0,5);
+  el.innerHTML = list.map((c,i)=>{
+    const impact = Math.round(c.impact || 0);
+    const signals = c.signals !== undefined ? `${Number(c.signals).toFixed(1)} signals` : `${Math.round(c.share || 0)}% signal share`;
+    const sources = c.sources !== undefined ? `${c.sources} sources` : 'source mix tracked';
+    return `
     <div class="contributor-row">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend)} · ${round1(c.signals)} signals · ${c.sources} sources</span></div>
-      <strong>+${round1(c.impact)} pts</strong>
-      <div class="rankbar"><i style="width:${clamp(c.score,0,100)}%"></i></div>
-    </div>
-  `).join('') || '<p>Contributor data is being calculated.</p>';
+      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${signals} · ${sources}</span></div>
+      <strong>+${impact}<small> pts</small></strong>
+      <div class="rankbar"><i style="width:${clamp(impact * 4,0,100)}%"></i></div>
+    </div>`;
+  }).join('') || '<p>Contributor data is being calculated.</p>';
 }
 
 function renderScoreBridge(bridge){
@@ -199,39 +190,35 @@ function renderScoreBridge(bridge){
   const duplicateNoise = Number(bridge.duplicateNoise ?? 0);
   const globalNormalization = Number(bridge.globalNormalization ?? 0);
   const final = Number(bridge.final ?? currentData?.score ?? 0);
-  const ds = bridge.duplicateStats || {};
   const line = (label, val, note='') => `<div class="bridge-line"><span>${label}${note ? `<small>${escapeHtml(note)}</small>` : ''}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
+  const duplicate = bridge.duplicate || {};
+  const global = bridge.global || {};
+  const stabilityDetails = Array.isArray(bridge.stabilityDetails) ? bridge.stabilityDetails : [];
+  const formula = Array.isArray(bridge.formula) ? bridge.formula : [];
+  const stabilityNote = stabilityDetails.length ? stabilityDetails.map(x=>`${x.label} ${Number(x.value)>=0?'+':''}${Number(x.value).toFixed(1)}`).join(' / ') : 'Primary driver and containment checks';
+  const duplicateNote = duplicate.note || 'Duplicate analysis unavailable';
+  const globalNote = global.reason || 'Cross-region synchronization analysis unavailable';
   el.innerHTML = `
     <div class="bridge-main"><span>RAW</span><b>${raw.toFixed(1)}</b><em>→</em><span>INDEX</span><b>${Math.round(final)}</b></div>
-    ${line('Stability adjustment', stability, `${escapeHtml(bridge.primaryDriver || 'Primary driver')} ${bridge.primaryDriverScore || ''}`)}
-    ${line('Duplicate / noise reduction', duplicateNoise, `${ds.duplicates || 0} duplicate clusters from ${ds.total || 0} signals`)}
-    ${line('Global synchronization', globalNormalization, `${escapeHtml(bridge.primaryContributor || 'Regional')} +${round1(bridge.primaryContributorImpact || 0)} pts`)}
-    <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
+    ${line('Stability adjustment', stability, stabilityNote)}
+    ${line('Duplicate / noise reduction', duplicateNoise, duplicateNote)}
+    ${line('Global synchronization', globalNormalization, globalNote)}
+    <div class="formula-box">
+      <b>WHY ${Math.round(final)}?</b>
+      <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
+      ${formula.length ? formula.map(f=>`<div class="formula-line"><span>${escapeHtml(f.label)}</span><strong>${Number(f.value)>=0 && f.label !== 'Final index' ? '+' : ''}${f.label === 'Final index' ? Math.round(f.value) : Number(f.value).toFixed(1)}</strong><small>${escapeHtml(f.note || '')}</small></div>`).join('') : ''}
+    </div>
   `;
 }
 
 function renderDrivers(drivers){
   const entries = Object.entries(drivers);
-  const details = currentData?.driverDetails || {};
-  $('drivers').innerHTML = entries.map(([k,v])=>{
-    const d = details[k] || {};
-    const note = d.contribution !== undefined ? `+${round1(d.contribution)} pts · ${round1(d.signalWeight || 0)} sig · ${d.sourceCount || 0} src` : `${Math.round(v)}`;
-    return `<div class="driver"><span>${k}<small>${note}</small></span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>`;
-  }).join('');
+  $('drivers').innerHTML = entries.map(([k,v])=>`
+    <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
+  `).join('');
 }
 function renderRegions(regions){
-  const list = (regions || []).slice(0,5).map(r=>{
-    const signals = round1(r.signals ?? r.raw ?? r.count ?? 0);
-    const sources = Number(r.sources || 0);
-    const hasEvidence = signals > 0 && sources > 0;
-    return {
-      ...r,
-      score: hasEvidence ? Number(r.score || 0) : 0,
-      change: hasEvidence ? (r.change || '+0') : '+0',
-      trend: hasEvidence ? (r.trend || 'Watch') : 'No verified signal'
-    };
-  });
-  $('regions').innerHTML = list.map((r,i)=>`
+  $('regions').innerHTML = regions.slice(0,5).map((r,i)=>`
     <div class="rank">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
       <div><div class="rankname">${r.name}</div><div class="rankmeta">${r.trend || 'Watch'} ${r.change ? `• ${r.change}` : ''}</div></div>
