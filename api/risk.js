@@ -201,14 +201,14 @@ async function aiAssessment(analyzed, articles, source){
 Required JSON keys:
 - assessment: 2 concise sentences explaining the current global risk posture.
 - brief: 1 concise sentence for the hero area.
-- scoreReason: 2-4 concise sentences explaining why the score is at this level, referring to the driver categories and synchronization/containment.
+- scoreReason: 2-4 concise sentences explaining why the score is at this level, referring to the driver categories, strongest regions, synchronization/containment, and why it is not higher or lower.
 - reasoningLines: array of exactly 5 objects. Each object must have label, delta, explanation. delta is an integer from -8 to 12 explaining score pressure, for example {"label":"Military pressure","delta":6,"explanation":"Taiwan Strait and Ukraine signals remain active."}.
 - topEventIndex: integer from 1 to the supplied headline list, selecting the most globally relevant item.
 - topEventTitle: short neutral title based on the selected headline.
 - topSummary: 1-2 concise sentences explaining the selected event's relevance.
 - outlook24h: one of STABLE, WATCH, ELEVATED, COOLING.
 - riskBias: one of RISING, FLAT, FALLING.
-- suggestedScore: integer 0-100 representing your independent global risk score from supplied headlines and calculated signals. Use this scale: 0-20 unusually calm, 21-35 normal monitoring, 36-55 watch/elevated tension, 56-75 dangerous, 76-100 crisis. Do not understate direct military escalation involving major states.
+- suggestedScore: integer 0-100 representing your independent global risk score from supplied headlines and calculated signals. Use this scale strictly: 0-20 unusually calm and rare; 21-35 normal global monitoring; 36-55 watch/elevated regional tension; 56-75 dangerous multi-region escalation; 76-100 crisis. Do not assign below 25 when Ukraine/Taiwan/Middle East military signals are present. Do not understate direct military escalation involving major states.
 - scoreAdjustment: integer from -8 to 12. Use this only for AI judgement over the rule score; be conservative.
 - keyDrivers: array of exactly 3 short strings naming the strongest current risk drivers.
 - watchItems: array of exactly 3 short strings naming what to monitor next.
@@ -283,6 +283,7 @@ function normalizeAi(ai, model){
     topSummary: pick(ai.topSummary, 'This event is the strongest current public signal.'),
     outlook24h: outlook,
     riskBias: bias,
+    suggestedScore: clamp(Math.round(Number(ai.suggestedScore || 0)), 0, 100),
     scoreAdjustment: adj,
     reasoningLines: reasoningLines.length ? reasoningLines : [
       { label:'Military pressure', delta:3, explanation:'Military headlines remain the strongest component.' },
@@ -324,7 +325,7 @@ function buildPayload(analyzed, articles, llm, source){
   return {
     ok:true,
     mode:'live',
-    engineVersion:'ORACLE ENGINE v4.1 REASONING',
+    engineVersion:'ORACLE ENGINE v4.2 REASONING OUTLOOK',
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
     aiError: llm?.error || source?.sourceError || null,
@@ -336,6 +337,7 @@ function buildPayload(analyzed, articles, llm, source){
     previousScore,
     state,
     confidence,
+    confidenceLabel:'AI CONFIDENCE',
     sourceHealth,
     outlook24h: aiOk ? llm.outlook24h : 'WATCH',
     riskBias: aiOk ? llm.riskBias : 'FLAT',
@@ -396,7 +398,7 @@ function round1(n){ return Math.round(Number(n||0)*10)/10; }
 
 function fallbackPayload(error){
   return {
-    ok:true, mode:'fallback', error, aiMode:'RULE BASED', aiError:error, aiDebug:{stage:'fallback', error}, sourceMode:'FALLBACK', updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:70, sourceHealth:72,
+    ok:true, mode:'fallback', error, aiMode:'RULE BASED', aiError:error, aiDebug:{stage:'fallback', error}, sourceMode:'FALLBACK', updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:70, confidenceLabel:'AI CONFIDENCE', sourceHealth:72,
     brief:'Public sources are partially available. ORACLE is operating in conservative monitoring mode.',
     assessment:'Signal volume is limited. The system is maintaining a stable global risk posture until stronger signals appear.',
     scoreReason:'Fallback score is based on conservative baseline monitoring values because live source retrieval did not complete.',
