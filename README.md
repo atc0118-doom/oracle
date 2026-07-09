@@ -1,13 +1,7 @@
-# ORACLE | World Risk Intelligence
+# ORACLE v5.2 AI Resilience Patch
 
-AI-assisted global risk dashboard.
-
-## This build
-- Adds Global English X post generation.
-- Adds Japanese X post generation.
-- Adds dynamic hashtag selection based on current news, regions, drivers, and AI analysis.
-- Keeps English as the primary public UI.
-- Admin mode: https://oracle-rho-flax.vercel.app/?admin=doom
-
-## Deploy
-Upload all files to GitHub and redeploy on Vercel.
+- Keeps AI running when GDELT returns 429
+- Uses short server cache when available
+- Uses conservative baseline signals when public source retrieval is degraded
+- Keeps `/api/risk` alive instead of falling fully into fallback mode
+- Preserves Global/Japanese post generation and tags
