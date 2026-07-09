@@ -21,10 +21,8 @@ Upload all files to GitHub and redeploy on Vercel.
 - Raw-to-Index bridge explains stability, duplicate/noise, and global synchronization adjustments.
 - Top Event summary is bound to the selected article and not merged with unrelated timeline signals.
 
-
-## v11.1 Evidence Gate Hotfix
-
-- Regions with `0 signals` or `0 sources` are now hard-gated to `score: 0`, `change: +0`, and `No verified signal`.
-- Local/low-relevance disaster noise, including Bay Area / Salinas-style small earthquake headlines and earthquakes under M6.0, is filtered out of geopolitical scoring.
-- Disaster monitoring remains separated from geopolitical risk scoring.
-- Source pills now explicitly label `Verified` and `Limited` states so border differences are understandable rather than looking like a UI bug.
+## v12.0 Zero Evidence Gate
+- Contributor rows now hard-gate zero-evidence regions: 0 signals or 0 sources always displays `No verified signal`, `0 signals`, `0 sources`, and `+0 pts`.
+- The API now includes `signals` and `sources` in contributor payloads so the UI cannot infer impact from a region score alone.
+- Local low-relevance disaster stories such as small California earthquakes from local outlets are excluded from geopolitical scoring.
+- News queries no longer pull generic earthquake terms; USGS remains the dedicated disaster source.

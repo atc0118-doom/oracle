@@ -23,7 +23,7 @@ const fallback = {
   sourceConfidence: { availableSources:['GDELT'], limitedSources:[], note:'Public sources are monitored for situational awareness.' },
   verifiedSources: ['GDELT'],
   topEvent: { title: 'Global signals under monitoring', summary: 'Public signals are monitored as source-bound risk inputs.', source: 'GDELT', url: 'https://www.gdeltproject.org/' },
-  contributors: [{name:'Ukraine', share:38, impact:12, score:56, trend:'Watch'}, {name:'Middle East', share:31, impact:9, score:45, trend:'Watch'}, {name:'Taiwan Strait', share:18, impact:5, score:49, trend:'Watch'}],
+  contributors: [{name:'Ukraine', share:0, impact:0, score:0, trend:'No verified signal', signals:0, sources:0}, {name:'Middle East', share:0, impact:0, score:0, trend:'No verified signal', signals:0, sources:0}, {name:'Taiwan Strait', share:0, impact:0, score:0, trend:'No verified signal', signals:0, sources:0}],
   scoreBridge: { raw:32.6, stability:-2, duplicateNoise:0, globalNormalization:-2.6, final:28, note:'Raw weighted drivers are adjusted for duplicate noise, regional concentration, and global synchronization.' },
   drivers: { Military: 42, Diplomatic: 32, Cyber: 18, Logistics: 12, Finance: 9, Disaster: 6 },
   calculation: { raw: 32.6, containment: -4.6, final: 28, lines: [] },
@@ -116,9 +116,9 @@ function renderLists(id, items){
 function renderSourceConfidence(sc){
   const el = $('sourceConfidence');
   if(!el) return;
-  const available = (sc.availableSources || []).slice(0,8).map(s=>`<b title="Verified public source">✓ ${escapeHtml(s)}<small>Verified</small></b>`).join('');
-  const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em title="Limited or unavailable source">△ ${escapeHtml(s)}<small>Limited</small></em>`).join('');
-  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources<small>Verified</small></b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
+  const available = (sc.availableSources || []).slice(0,8).map(s=>`<b>${escapeHtml(s)}</b>`).join('');
+  const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em>${escapeHtml(s)}</em>`).join('');
+  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
 }
 
 function renderVerifiedSources(sources){
@@ -168,19 +168,27 @@ function evidenceStrengthFromData(data){
 function renderContributors(contributors){
   const el = $('contributors');
   if(!el) return;
-  const list = (contributors || []).slice(0,5);
-  el.innerHTML = list.map((c,i)=>{
-    const impact = round1(c.impact || 0);
-    const trend = c.gated || (!c.signals && !c.sources) ? 'No verified signal' : (c.trend || 'Watch');
-    const width = c.gated ? 0 : clamp(c.score || c.share || 0,0,100);
-    return `
-    <div class="contributor-row ${c.gated ? 'gated' : ''}">
+  const list = (contributors || []).slice(0,5).map(c=>{
+    const signals = round1(c.signals ?? c.raw ?? c.count ?? 0);
+    const sources = Number(c.sources || 0);
+    const hasEvidence = signals > 0 && sources > 0;
+    return {
+      ...c,
+      signals: hasEvidence ? signals : 0,
+      sources: hasEvidence ? sources : 0,
+      impact: hasEvidence ? round1(c.impact || 0) : 0,
+      score: hasEvidence ? (c.score || c.share || 0) : 0,
+      trend: hasEvidence ? (c.trend || 'Watch') : 'No verified signal'
+    };
+  });
+  el.innerHTML = list.map((c,i)=>`
+    <div class="contributor-row">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(trend)} · ${round1(c.signals || 0)} signals · ${c.sources || 0} sources</span></div>
-      <strong>${impact > 0 ? '+' : ''}${impact} pts</strong>
-      <div class="rankbar"><i style="width:${width}%"></i></div>
-    </div>`;
-  }).join('') || '<p>Contributor data is being calculated.</p>';
+      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend)} · ${round1(c.signals)} signals · ${c.sources} sources</span></div>
+      <strong>+${round1(c.impact)} pts</strong>
+      <div class="rankbar"><i style="width:${clamp(c.score,0,100)}%"></i></div>
+    </div>
+  `).join('') || '<p>Contributor data is being calculated.</p>';
 }
 
 function renderScoreBridge(bridge){
@@ -212,19 +220,25 @@ function renderDrivers(drivers){
   }).join('');
 }
 function renderRegions(regions){
-  $('regions').innerHTML = regions.slice(0,5).map((r,i)=>{
-    const gated = r.gated || (!r.signals && !r.sources && Math.round(r.score||0) === 0);
-    const meta = gated
-      ? `No verified signal · 0 signals · 0 sources · +0`
-      : `${r.trend || 'Watch'} ${r.change ? `• ${r.change}` : ''} · ${round1(r.signals || 0)} signals · ${r.sources || 0} sources`;
-    return `
-    <div class="rank ${gated ? 'gated' : ''}">
+  const list = (regions || []).slice(0,5).map(r=>{
+    const signals = round1(r.signals ?? r.raw ?? r.count ?? 0);
+    const sources = Number(r.sources || 0);
+    const hasEvidence = signals > 0 && sources > 0;
+    return {
+      ...r,
+      score: hasEvidence ? Number(r.score || 0) : 0,
+      change: hasEvidence ? (r.change || '+0') : '+0',
+      trend: hasEvidence ? (r.trend || 'Watch') : 'No verified signal'
+    };
+  });
+  $('regions').innerHTML = list.map((r,i)=>`
+    <div class="rank">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><div class="rankname">${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(meta)}</div></div>
-      <div class="rankscore">${Math.round(r.score || 0)}</div>
-      <div class="rankbar"><i style="width:${gated ? 0 : clamp(r.score,0,100)}%"></i></div>
-    </div>`;
-  }).join('');
+      <div><div class="rankname">${r.name}</div><div class="rankmeta">${r.trend || 'Watch'} ${r.change ? `• ${r.change}` : ''}</div></div>
+      <div class="rankscore">${Math.round(r.score)}</div>
+      <div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div>
+    </div>
+  `).join('');
 }
 function renderTimeline(timeline){
   const list = (timeline || []).slice(0,5);
