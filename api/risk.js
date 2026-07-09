@@ -114,7 +114,7 @@ async function aiAssessment(analyzed, articles){
       method:'POST',
       headers:{ 'content-type':'application/json', authorization:`Bearer ${key}` },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         response_format: { type:'json_object' },
         messages:[
           { role:'system', content:'You output valid compact JSON only.' },
@@ -125,8 +125,8 @@ async function aiAssessment(analyzed, articles){
       })
     });
 
-    if(!r.ok) return { error:`openai ${r.status}` };
     const j = await r.json();
+    if(!r.ok) return { error:`HTTP ${r.status}`, detail:j.error?.message||JSON.stringify(j) };
     const text = j.choices?.[0]?.message?.content || '';
     return JSON.parse(text);
   }catch(e){
@@ -147,7 +147,7 @@ function buildPayload(analyzed, articles, llm){
     mode:'live',
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
-    aiError: llm?.error || null,
+    aiError: llm?.detail || llm?.error || null,
     updatedAt:new Date().toISOString(),
     score,
     previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
