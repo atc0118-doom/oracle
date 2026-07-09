@@ -116,9 +116,9 @@ function renderLists(id, items){
 function renderSourceConfidence(sc){
   const el = $('sourceConfidence');
   if(!el) return;
-  const available = (sc.availableSources || []).slice(0,8).map(s=>`<b>${escapeHtml(s)}</b>`).join('');
-  const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em>${escapeHtml(s)}</em>`).join('');
-  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
+  const available = (sc.availableSources || []).slice(0,8).map(s=>`<b title="Verified public source">✓ ${escapeHtml(s)}<small>Verified</small></b>`).join('');
+  const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em title="Limited or unavailable source">△ ${escapeHtml(s)}<small>Limited</small></em>`).join('');
+  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources<small>Verified</small></b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
 }
 
 function renderVerifiedSources(sources){
@@ -169,14 +169,18 @@ function renderContributors(contributors){
   const el = $('contributors');
   if(!el) return;
   const list = (contributors || []).slice(0,5);
-  el.innerHTML = list.map((c,i)=>`
-    <div class="contributor-row">
+  el.innerHTML = list.map((c,i)=>{
+    const impact = round1(c.impact || 0);
+    const trend = c.gated || (!c.signals && !c.sources) ? 'No verified signal' : (c.trend || 'Watch');
+    const width = c.gated ? 0 : clamp(c.score || c.share || 0,0,100);
+    return `
+    <div class="contributor-row ${c.gated ? 'gated' : ''}">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${round1(c.signals || 0)} signals · ${c.sources || 0} sources</span></div>
-      <strong>+${round1(c.impact || 0)} pts</strong>
-      <div class="rankbar"><i style="width:${clamp(c.score || c.share || 0,0,100)}%"></i></div>
-    </div>
-  `).join('') || '<p>Contributor data is being calculated.</p>';
+      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(trend)} · ${round1(c.signals || 0)} signals · ${c.sources || 0} sources</span></div>
+      <strong>${impact > 0 ? '+' : ''}${impact} pts</strong>
+      <div class="rankbar"><i style="width:${width}%"></i></div>
+    </div>`;
+  }).join('') || '<p>Contributor data is being calculated.</p>';
 }
 
 function renderScoreBridge(bridge){
@@ -208,14 +212,19 @@ function renderDrivers(drivers){
   }).join('');
 }
 function renderRegions(regions){
-  $('regions').innerHTML = regions.slice(0,5).map((r,i)=>`
-    <div class="rank">
+  $('regions').innerHTML = regions.slice(0,5).map((r,i)=>{
+    const gated = r.gated || (!r.signals && !r.sources && Math.round(r.score||0) === 0);
+    const meta = gated
+      ? `No verified signal · 0 signals · 0 sources · +0`
+      : `${r.trend || 'Watch'} ${r.change ? `• ${r.change}` : ''} · ${round1(r.signals || 0)} signals · ${r.sources || 0} sources`;
+    return `
+    <div class="rank ${gated ? 'gated' : ''}">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><div class="rankname">${r.name}</div><div class="rankmeta">${r.trend || 'Watch'} ${r.change ? `• ${r.change}` : ''}</div></div>
-      <div class="rankscore">${Math.round(r.score)}</div>
-      <div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div>
-    </div>
-  `).join('');
+      <div><div class="rankname">${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(meta)}</div></div>
+      <div class="rankscore">${Math.round(r.score || 0)}</div>
+      <div class="rankbar"><i style="width:${gated ? 0 : clamp(r.score,0,100)}%"></i></div>
+    </div>`;
+  }).join('');
 }
 function renderTimeline(timeline){
   const list = (timeline || []).slice(0,5);
