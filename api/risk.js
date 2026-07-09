@@ -99,7 +99,7 @@ async function fetchWithTimeout(url, options={}){
 async function fetchGdelt(){
   const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
   const j = await r.json();
   return (j.articles || []).map(a=>({
@@ -116,7 +116,7 @@ async function fetchGdelt(){
 async function fetchGoogleNews(){
   const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China) when:1d');
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
   if(!r.ok) throw new Error('google_news ' + r.status);
   const xml = await r.text();
   return parseRss(xml, 'Google News').slice(0,25);
@@ -127,7 +127,7 @@ async function fetchGuardian(){
   if(!key) return [];
   const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China');
   const url = `https://content.guardianapis.com/search?q=${q}&section=world|technology|business|environment&show-fields=trailText&order-by=newest&page-size=20&api-key=${key}`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
   if(!r.ok) throw new Error('guardian ' + r.status);
   const j = await r.json();
   return (j.response?.results || []).map(a=>({
@@ -143,7 +143,7 @@ async function fetchGuardian(){
 
 async function fetchUSGS(){
   const url = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.geojson';
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
   if(!r.ok) throw new Error('usgs ' + r.status);
   const j = await r.json();
   return (j.features || []).slice(0,12).map(f=>({
@@ -159,7 +159,7 @@ async function fetchUSGS(){
 
 async function fetchNOAA(){
   const url = 'https://services.swpc.noaa.gov/products/alerts.json';
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
   if(!r.ok) throw new Error('noaa ' + r.status);
   const j = await r.json();
   const rows = Array.isArray(j) ? j.slice(-10) : [];
@@ -268,10 +268,10 @@ async function aiAssessment(analyzed, articles, sourceError=null){
 
   try{
     const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n');
-    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze ONLY the supplied public headlines and calculated signals.
+    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze ONLY the supplied public headlines and calculated signals. Prefer source-bound, non-causal intelligence wording.
 Return strict JSON only. No markdown.
 Required keys:
-- facts: array of 2 to 4 short source-bound observations from the supplied headlines only. Prefer source + headline summaries, not analysis.
+- facts: array of 2 to 4 conservative source-bound observations. Do NOT repeat specific attack/strike headlines verbatim. Prefer aggregated public-reporting summaries such as source coverage, monitored regions, and signal categories.
 - assessment: 1 to 2 sentence AI assessment, clearly separated from facts.
 - brief: 1 concise source-bound summary for the hero area, maximum 120 characters, no more than one sentence.
 - topSummary: 1 sentence explanation of why the selected top event matters.
@@ -302,7 +302,7 @@ CRITICAL SAFETY / RELIABILITY RULES:
 - For FACTS, prefer neutral summaries over dramatic verbs. Avoid "intensifying", "responding aggressively", "driving", "triggering", or "proving" unless those exact ideas are present in supplied headlines.
 
 
-- Keep the hero brief short enough for a mobile screen. Do not exceed 120 characters.
+- Keep the hero brief short enough for a mobile screen. Do not exceed 115 characters. Prefer: "Multiple public sources indicate watch-level monitoring conditions led by [region]."
 - Do not combine U.S./Iran and Ukraine headlines into a single causal sentence.
 - Use neutral phrasing: "headlines mention", "public reporting references", "monitoring continues".
 - If evidence is mixed or source volume is limited, say so plainly.
@@ -397,8 +397,8 @@ function reliabilityRewrite(text='', corpus=''){
   out = out.replace(/\bconfirmed\b/gi, 'reported');
   out = out.replace(/\bproves\b/gi, 'indicates');
   out = out.replace(/\bwill\b/gi, 'may');
-  out = out.replace(/\bhas launched new strikes\b/gi, 'is mentioned in public reporting in connection with possible military activity');
-  out = out.replace(/\blaunched new strikes\b/gi, 'is mentioned in public reporting in connection with possible military activity');
+  out = out.replace(/\bhas launched new strikes\b/gi, 'is referenced in public reporting related to military activity');
+  out = out.replace(/\blaunched new strikes\b/gi, 'is referenced in public reporting related to military activity');
   out = out.replace(/\bare intensifying\b/gi, 'remain under watch');
   out = out.replace(/\bis intensifying\b/gi, 'remains under watch');
   out = out.replace(/\bresponding aggressively\b/gi, 'also appearing in related public reporting');
@@ -503,29 +503,42 @@ function normalizeSourceConfidence(sc, articles, meta){
     note: safeIntelText(sc?.note || note, 'Source confidence is being monitored.', (articles||[]).map(a=>a.title).join(' '))
   };
 }
-function buildFacts(articles, llm, meta){
-  // FACTS are intentionally not free-form AI prose. They are source-bound observations
-  // generated directly from supplied article titles to prevent unsupported claims.
-  const corpus = (articles||[]).map(a=>a.title).join(' ');
-  const out = [];
-  if(meta?.degraded) out.push('Source status: live public source retrieval is limited; cached or baseline signals may be used.');
+function topicSummary(articles=[]){
+  const corpus = (articles||[]).map(a=>String(a.title||'').toLowerCase()).join(' ');
+  const regions = [];
+  if(/iran|israel|gaza|hamas|hezbollah|houthi|red sea|lebanon|syria/.test(corpus)) regions.push('Middle East');
+  if(/ukraine|russia|kyiv|donetsk|kharkiv|zaporizhzhia/.test(corpus)) regions.push('Eastern Europe');
+  if(/taiwan|china|south china sea|philippines|maritime/.test(corpus)) regions.push('East Asia');
+  if(/cyber|hack|malware|ransomware|breach|ddos/.test(corpus)) regions.push('cyber activity');
+  if(/earthquake|volcano|storm|hurricane|typhoon|tsunami|wildfire|flood/.test(corpus)) regions.push('natural hazard monitoring');
+  return regions.length ? regions.slice(0,3).join(', ') : 'monitored regions';
+}
 
-  const seen = new Set();
-  for(const a of (articles||[]).slice(0,10)){
-    const src = a.source || 'Public source';
-    let title = safeIntelText(a.title || 'Public signal under monitoring.', 'Public signal under monitoring.', corpus);
-    title = title.replace(/\.$/,'');
-    const fact = `${src}: ${title}.`;
-    const key = fact.toLowerCase().replace(/[^a-z0-9]+/g,' ').slice(0,90);
-    if(!seen.has(key)){
-      seen.add(key);
-      out.push(fact);
-    }
-    if(out.length >= 4) break;
+function buildFacts(articles, llm, meta){
+  // v7.3: FACTS must not quote single dramatic headlines as established truth.
+  // They summarize what the available public feeds are broadly indicating.
+  const sources = getVerifiedSources(articles);
+  const sourceText = sources.length ? sources.slice(0,5).join(', ') : 'public sources';
+  const topic = topicSummary(articles);
+  const count = Array.isArray(articles) ? articles.length : 0;
+  const facts = [];
+
+  facts.push(`${sourceText}: public reporting is being monitored across ${topic}.`);
+
+  if(count > 0){
+    facts.push(`ORACLE reviewed ${count} recent public signals and grouped them by military, diplomatic, cyber, logistics, finance, and disaster categories.`);
+  } else {
+    facts.push('Live public source volume is limited; ORACLE is using conservative baseline monitoring.');
   }
 
-  if(out.length) return out;
-  return ['Public signals are being monitored.'];
+  if(meta?.degraded){
+    facts.push('Source status: one or more live feeds are degraded, so cached or baseline signals may be used.');
+  } else {
+    facts.push('Source status: live public monitoring is active; details remain subject to verification by originating sources.');
+  }
+
+  facts.push('Status: verified public reporting only; ORACLE separates facts from AI assessment and outlook.');
+  return facts.slice(0,4);
 }
 
 function buildReasoning(analyzed, topRegion){
@@ -552,13 +565,13 @@ function buildEvidence(articles=[], meta={}, analyzed={}){
 }
 
 function conciseBrief(aiBrief='', articles=[], topRegion='Global', score=0){
-  const text = clean(aiBrief);
-  if(text && text.length <= 135 && !isUnsupportedSpecific(text, (articles||[]).map(a=>a.title).join(' '))) return text.replace(/\s+/g,' ');
+  // v7.3: hero text is intentionally conservative and derived from source coverage + score,
+  // not from a single AI-written headline.
   const sources = getVerifiedSources(articles);
   const main = topRegion || 'Global';
-  const state = score >= 50 ? 'elevated' : score >= 30 ? 'watch-level' : 'stable';
-  if(sources.length >= 3) return `Multiple public sources indicate ${state} monitoring conditions, led by ${main}.`;
-  return `Available public signals indicate ${state} monitoring conditions, led by ${main}.`;
+  const level = score >= 50 ? 'elevated' : score >= 30 ? 'watch-level' : 'stable';
+  if(sources.length >= 3) return `Multiple public sources indicate ${level} monitoring conditions led by ${main}.`;
+  return `Available public signals indicate ${level} monitoring conditions led by ${main}.`;
 }
 
 function buildPayload(analyzed, articles, llm, meta={}){
