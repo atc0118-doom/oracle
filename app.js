@@ -60,6 +60,7 @@ function render(data){
   $('confidenceBar').style.width = `${clamp(currentData.confidence || 70,0,100)}%`;
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
+  renderAiDebug(currentData);
 
   const e = currentData.topEvent || fallback.topEvent;
   $('eventSource').textContent = e.source || 'SOURCE';
@@ -75,6 +76,33 @@ function render(data){
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
 }
+
+function renderAiDebug(data){
+  const panel = $('aiDebugPanel');
+  const errorText = $('aiErrorText');
+  const debugText = $('aiDebugText');
+  if(!panel || !errorText || !debugText) return;
+
+  const hasError = Boolean(data.aiError) || (data.aiMode && String(data.aiMode).includes('RULE'));
+  const debug = data.aiDebug || null;
+
+  if(!hasError && !debug){
+    panel.hidden = true;
+    errorText.textContent = '';
+    debugText.textContent = '';
+    return;
+  }
+
+  panel.hidden = false;
+  errorText.textContent = data.aiError || 'AI did not activate. No explicit error returned.';
+  debugText.textContent = JSON.stringify({
+    aiMode: data.aiMode,
+    aiUsed: data.aiUsed,
+    aiError: data.aiError,
+    aiDebug: debug
+  }, null, 2);
+}
+
 function renderDrivers(drivers){
   const entries = Object.entries(drivers);
   $('drivers').innerHTML = entries.map(([k,v])=>`
