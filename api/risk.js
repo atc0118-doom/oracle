@@ -217,7 +217,29 @@ ${headlines}`;
 }
 
 
-function safeIntelText(text='', fallback='Public signals remain under monitoring.'){
+function reliabilityRewrite(text='', corpus=''){
+  let out = String(text || '');
+  const c = String(corpus || '').toLowerCase();
+
+  // If AI text contains high-risk specific claims not clearly supported by supplied headlines,
+  // soften them into source-bound regional monitoring language.
+  const unsupportedStrike = /\b(strike|strikes|airstrike|airstrikes|attack|attacks|missile|missiles)\b/i.test(out)
+    && !/\b(strike|strikes|airstrike|airstrikes|attack|attacks|missile|missiles)\b/i.test(c);
+  if(unsupportedStrike){
+    out = out.replace(/.*?(U\.S\.|US|United States).*?(Iran|Middle East).*?\.?$/i, 'Available public signals indicate elevated military and diplomatic activity involving the U.S. and Iran, with details subject to verification.');
+    out = out.replace(/.*?(Iran|Israel|Ukraine|Taiwan).*?(strike|attack|missile).*?\.?$/i, 'Available public signals indicate elevated regional tension, with specific military details subject to verification.');
+  }
+
+  // Convert overly certain language into cautious intelligence language.
+  out = out.replace(/\bconfirmed\b/gi, 'reported');
+  out = out.replace(/\bproves\b/gi, 'indicates');
+  out = out.replace(/\bwill\b/gi, 'may');
+  out = out.replace(/\bhas launched new strikes\b/gi, 'is linked in public reporting to possible military activity');
+  out = out.replace(/\blaunched new strikes\b/gi, 'is linked in public reporting to possible military activity');
+  return out;
+}
+
+function safeIntelText(text='', fallback='Public signals remain under monitoring.', corpus=''){
   let out = reliabilityRewrite(String(text || ''), corpus).replace(/\s+/g,' ').trim();
   if(!out) return fallback;
 
