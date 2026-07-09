@@ -14,6 +14,12 @@ const fallback = {
   aiMode: 'RULE BASED',
   brief: 'Regional tensions remain elevated. Global escalation risk remains contained.',
   assessment: 'AI-assisted rules detected elevated regional pressure without synchronized global escalation.',
+  facts: ['Public monitoring signals are active.', 'Regional pressure remains localized.', 'No synchronized global escalation signal is currently detected.'],
+  outlook24h: 'STABLE',
+  outlookText: 'Conditions are expected to remain watchful unless additional verified signals emerge.',
+  keyDrivers: ['Regional military pressure','Diplomatic friction','Contained logistics signal'],
+  watchNext: ['Verified escalation signals','Major diplomatic statements','Cyber or logistics spillover'],
+  sourceConfidence: { availableSources:['GDELT'], limitedSources:[], note:'Public sources are monitored for situational awareness.' },
   topEvent: { title: 'Global signals under monitoring', summary: 'Public signals indicate localized pressure across monitored regions.', source: 'GDELT', url: 'https://www.gdeltproject.org/' },
   drivers: { Military: 42, Diplomatic: 32, Cyber: 18, Logistics: 12, Finance: 9, Disaster: 6 },
   calculation: { raw: 32.6, containment: -4.6, final: 28, lines: [] },
@@ -56,6 +62,11 @@ function render(data){
   $('lastSync').textContent = fmtTime(currentData.updatedAt);
   $('brief').textContent = currentData.brief || fallback.brief;
   $('assessment').textContent = currentData.assessment || fallback.assessment;
+  renderFacts(currentData.facts || fallback.facts);
+  renderOutlook(currentData);
+  renderLists('keyDrivers', currentData.keyDrivers || fallback.keyDrivers);
+  renderLists('watchNext', currentData.watchNext || fallback.watchNext);
+  renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
   $('confidence').textContent = `${Math.round(currentData.confidence || 70)}%`;
   $('confidenceBar').style.width = `${clamp(currentData.confidence || 70,0,100)}%`;
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
@@ -75,6 +86,35 @@ function render(data){
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
 }
+function renderFacts(facts){
+  const box = $('facts');
+  if(!box) return;
+  const list = Array.isArray(facts) ? facts.slice(0,4) : [];
+  box.innerHTML = list.map(f=>`<div class="fact-row"><span>FACT</span><p>${escapeHtml(f)}</p></div>`).join('') || '<p>Public signals are being monitored.</p>';
+}
+function renderOutlook(d){
+  const o = $('outlookValue');
+  const t = $('outlookText');
+  if(o) o.textContent = d.outlook24h || 'STABLE';
+  if(t) t.textContent = d.outlookText || fallback.outlookText;
+}
+function renderLists(id, items){
+  const el = $(id);
+  if(!el) return;
+  const list = Array.isArray(items) ? items.slice(0,5) : [];
+  el.innerHTML = list.map(x=>`<li>${escapeHtml(x)}</li>`).join('') || '<li>Monitoring public signals.</li>';
+}
+function renderSourceConfidence(sc){
+  const el = $('sourceConfidence');
+  if(!el) return;
+  const available = (sc.availableSources || []).slice(0,8).map(s=>`<b>${escapeHtml(s)}</b>`).join('');
+  const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em>${escapeHtml(s)}</em>`).join('');
+  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
+}
+function escapeHtml(str=''){
+  return String(str).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+}
+
 function renderDrivers(drivers){
   const entries = Object.entries(drivers);
   $('drivers').innerHTML = entries.map(([k,v])=>`
@@ -121,7 +161,16 @@ function renderCalc(data){
     <div class="calc-total"><span>RAW SCORE</span><strong>${raw.toFixed(1)}</strong></div>
     <div class="calc-total"><span>STABILITY ADJUSTMENT</span><strong>${Number(containment).toFixed(1)}</strong></div>
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
+    ${renderReasoning(calc.reasoning || [])}
   `;
+}
+function renderReasoning(reasoning){
+  if(!Array.isArray(reasoning) || !reasoning.length) return '';
+  return `<div class="reasoning-title">AI REASONING</div>` + reasoning.slice(0,6).map(r=>{
+    const delta = Number(r.delta || 0);
+    const sign = delta >= 0 ? '+' : '';
+    return `<div class="reason-line"><b>${escapeHtml(r.label || 'Signal')}</b><span>${sign}${delta}</span><p>${escapeHtml(r.text || '')}</p></div>`;
+  }).join('');
 }
 async function loadRisk(){
   try{
@@ -139,7 +188,7 @@ function textPool(d){
   return [
     event.title, event.summary, d.assessment, d.brief,
     ...(d.regions || []).map(r=>r.name),
-    ...(d.keyDrivers || []), ...(d.watchItems || [])
+    ...(d.facts || []), ...(d.keyDrivers || []), ...(d.watchNext || []), d.outlookText
   ].join(' ').toLowerCase();
 }
 

@@ -1,10 +1,18 @@
-# ORACLE v5.3 AI Safety Layer
+# ORACLE v6.0 Reliability Terminal
 
-Changes:
-- Adds AI Safety / Reliability Layer to prompts.
-- Prevents unsupported definitive claims.
-- Uses cautious source-bound language such as reported / public signals indicate.
-- Keeps Global and Japanese X post generation.
-- Keeps GDELT 429 resilience and AI analysis fallback.
+Final public-release direction:
 
-Deploy: upload all files and redeploy on Vercel.
+- Separates FACTS / AI ASSESSMENT / 24H OUTLOOK.
+- Adds SOURCE CONFIDENCE and verification language.
+- Keeps AI Analysis Active, GDELT resilience, Global/Japanese X post generation.
+- Adds AI reasoning lines inside WHY SCORE.
+- Uses cautious, source-bound language and avoids unsupported definitive claims.
+
+Deploy:
+1. Upload all files and folders.
+2. Keep `api/`, `assets/`, `app.js`, `index.html`, `style.css`, `package.json`.
+3. Redeploy on Vercel.
+
+Environment:
+- `OPENAI_API_KEY` required for AI ANALYSIS ACTIVE.
+- Optional `OPENAI_MODEL`, default: `gpt-4o-mini`.

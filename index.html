@@ -31,10 +31,22 @@
     </section>
 
     <section class="grid">
+      <article class="card facts reveal">
+        <div class="card-head"><b>FACTS</b><span>PUBLIC REPORTING</span></div>
+        <div id="facts">Awaiting source-bound observations.</div>
+      </article>
+
       <article class="card assessment reveal">
         <div class="card-head"><b>AI ASSESSMENT</b><strong id="confidence">--%</strong></div>
         <p id="assessment">Awaiting AI-assisted assessment.</p>
         <div class="confidence-bar"><i id="confidenceBar" style="width:0%"></i></div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="card outlook reveal">
+        <div class="card-head"><b>24H OUTLOOK</b><strong id="outlookValue">STABLE</strong></div>
+        <p id="outlookText">Awaiting outlook.</p>
       </article>
 
       <article class="card event reveal">
@@ -55,6 +67,22 @@
         <div class="card-head"><b>HOT REGIONS</b><span>AUTO RANKED</span></div>
         <div id="regions"></div>
       </article>
+    </section>
+
+    <section class="grid">
+      <article class="card reveal">
+        <div class="card-head"><b>KEY DRIVERS</b><span>AI FILTERED</span></div>
+        <ul class="intel-list" id="keyDrivers"></ul>
+      </article>
+      <article class="card reveal">
+        <div class="card-head"><b>WATCH NEXT</b><span>NEXT SIGNALS</span></div>
+        <ul class="intel-list" id="watchNext"></ul>
+      </article>
+    </section>
+
+    <section class="card reveal">
+      <div class="card-head"><b>SOURCE CONFIDENCE</b><span>VERIFICATION LAYER</span></div>
+      <div id="sourceConfidence"></div>
     </section>
 
     <section class="card reveal">
@@ -93,7 +121,7 @@
       <pre id="debugBox"></pre>
     </section>
 
-    <footer class="footer">Powered by ORACLE Intelligence Engine. Public signals are used for situational awareness, not predictions.</footer>
+    <footer class="footer">ORACLE Intelligence Engine v6.0 · Public signals are used for situational awareness, not predictions. Facts, AI assessment, and outlook are separated for reliability.</footer>
   </main>
 
   <div class="modal" id="scoreModal" aria-hidden="true">
@@ -101,7 +129,7 @@
       <button class="close" id="closeModal" type="button">×</button>
       <h3>HOW WE CALCULATE</h3>
       <div id="calcDetail"></div>
-      <p class="modal-note">Scores are generated from public signals and AI-assisted analysis. They are designed for situational awareness, not forecasts.</p>
+      <p class="modal-note">Scores combine public signals, source confidence, weighted risk drivers, and AI-assisted reasoning. ORACLE separates facts, assessment, and outlook for reliability.</p>
     </div>
   </div>
 
