@@ -43,6 +43,7 @@ const fallback = {
 };
 
 function clamp(n,min,max){ return Math.max(min, Math.min(max, Number(n)||0)); }
+function round1(n){ return Math.round(Number(n||0)*10)/10; }
 function fmtTime(iso){
   const d = iso ? new Date(iso) : new Date();
   return d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit', timeZone:'Asia/Tokyo' }) + ' JST';
@@ -171,9 +172,9 @@ function renderContributors(contributors){
   el.innerHTML = list.map((c,i)=>`
     <div class="contributor-row">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${Math.round(c.share || 0)}%</span></div>
-      <strong>+${Math.round(c.impact || 0)}</strong>
-      <div class="rankbar"><i style="width:${clamp(c.share || c.score || 0,0,100)}%"></i></div>
+      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${round1(c.signals || 0)} signals · ${c.sources || 0} sources</span></div>
+      <strong>+${round1(c.impact || 0)} pts</strong>
+      <div class="rankbar"><i style="width:${clamp(c.score || c.share || 0,0,100)}%"></i></div>
     </div>
   `).join('') || '<p>Contributor data is being calculated.</p>';
 }
@@ -186,21 +187,25 @@ function renderScoreBridge(bridge){
   const duplicateNoise = Number(bridge.duplicateNoise ?? 0);
   const globalNormalization = Number(bridge.globalNormalization ?? 0);
   const final = Number(bridge.final ?? currentData?.score ?? 0);
-  const line = (label, val) => `<div class="bridge-line"><span>${label}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
+  const ds = bridge.duplicateStats || {};
+  const line = (label, val, note='') => `<div class="bridge-line"><span>${label}${note ? `<small>${escapeHtml(note)}</small>` : ''}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
   el.innerHTML = `
     <div class="bridge-main"><span>RAW</span><b>${raw.toFixed(1)}</b><em>→</em><span>INDEX</span><b>${Math.round(final)}</b></div>
-    ${line('Stability adjustment', stability)}
-    ${line('Duplicate / noise reduction', duplicateNoise)}
-    ${line('Global synchronization', globalNormalization)}
+    ${line('Stability adjustment', stability, `${escapeHtml(bridge.primaryDriver || 'Primary driver')} ${bridge.primaryDriverScore || ''}`)}
+    ${line('Duplicate / noise reduction', duplicateNoise, `${ds.duplicates || 0} duplicate clusters from ${ds.total || 0} signals`)}
+    ${line('Global synchronization', globalNormalization, `${escapeHtml(bridge.primaryContributor || 'Regional')} +${round1(bridge.primaryContributorImpact || 0)} pts`)}
     <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
   `;
 }
 
 function renderDrivers(drivers){
   const entries = Object.entries(drivers);
-  $('drivers').innerHTML = entries.map(([k,v])=>`
-    <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
-  `).join('');
+  const details = currentData?.driverDetails || {};
+  $('drivers').innerHTML = entries.map(([k,v])=>{
+    const d = details[k] || {};
+    const note = d.contribution !== undefined ? `+${round1(d.contribution)} pts · ${round1(d.signalWeight || 0)} sig · ${d.sourceCount || 0} src` : `${Math.round(v)}`;
+    return `<div class="driver"><span>${k}<small>${note}</small></span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>`;
+  }).join('');
 }
 function renderRegions(regions){
   $('regions').innerHTML = regions.slice(0,5).map((r,i)=>`
