@@ -99,7 +99,7 @@ async function fetchWithTimeout(url, options={}){
 async function fetchGdelt(){
   const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/8.0' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
   const j = await r.json();
   return (j.articles || []).map(a=>({
@@ -116,7 +116,7 @@ async function fetchGdelt(){
 async function fetchGoogleNews(){
   const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China) when:1d');
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/8.0' } });
   if(!r.ok) throw new Error('google_news ' + r.status);
   const xml = await r.text();
   return parseRss(xml, 'Google News').slice(0,25);
@@ -127,7 +127,7 @@ async function fetchGuardian(){
   if(!key) return [];
   const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China');
   const url = `https://content.guardianapis.com/search?q=${q}&section=world|technology|business|environment&show-fields=trailText&order-by=newest&page-size=20&api-key=${key}`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/8.0' } });
   if(!r.ok) throw new Error('guardian ' + r.status);
   const j = await r.json();
   return (j.response?.results || []).map(a=>({
@@ -143,7 +143,7 @@ async function fetchGuardian(){
 
 async function fetchUSGS(){
   const url = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.geojson';
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/8.0' } });
   if(!r.ok) throw new Error('usgs ' + r.status);
   const j = await r.json();
   return (j.features || []).slice(0,12).map(f=>({
@@ -159,7 +159,7 @@ async function fetchUSGS(){
 
 async function fetchNOAA(){
   const url = 'https://services.swpc.noaa.gov/products/alerts.json';
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.3' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/8.0' } });
   if(!r.ok) throw new Error('noaa ' + r.status);
   const j = await r.json();
   const rows = Array.isArray(j) ? j.slice(-10) : [];
@@ -274,7 +274,7 @@ Required keys:
 - facts: array of 2 to 4 conservative source-bound observations. Do NOT repeat specific attack/strike headlines verbatim. Prefer aggregated public-reporting summaries such as source coverage, monitored regions, and signal categories.
 - assessment: 1 to 2 sentence AI assessment, clearly separated from facts.
 - brief: 1 concise source-bound summary for the hero area, maximum 120 characters, no more than one sentence.
-- topSummary: 1 sentence explanation of why the selected top event matters.
+- topSummary: optional. If used, summarize ONLY the selected top event article. Never merge it with any other headline.
 - scoreReason: 1 sentence explaining the score using drivers and public signals.
 - outlook24h: one of STABLE, WATCH, ESCALATING, DE-ESCALATING.
 - outlookText: 1 sentence explaining the 24h outlook without claiming certainty.
@@ -307,6 +307,11 @@ CRITICAL SAFETY / RELIABILITY RULES:
 - Use neutral phrasing: "headlines mention", "public reporting references", "monitoring continues".
 - If evidence is mixed or source volume is limited, say so plainly.
 
+Top event rules:
+- If writing about the selected top event, use ONLY the selected top event headline.
+- Never pair a title from one article with a summary from another article.
+- If uncertain, write: "This selected headline is being monitored as a public signal."
+
 X post rules:
 - Always include the score and state.
 - Avoid definitive claims unless directly supported by supplied headlines.
@@ -316,6 +321,7 @@ Global score: ${analyzed.final}
 Drivers: ${JSON.stringify(analyzed.drivers)}
 Regions: ${JSON.stringify(analyzed.regions)}
 Calculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}
+Selected top event: ${analyzed.top?.title || 'None'} [${analyzed.top?.source || 'Unknown'}]
 Source status: ${sourceError ? 'DEGRADED: '+sourceError : 'LIVE'}
 Headlines:
 ${headlines}`;
@@ -494,15 +500,18 @@ function normalizeSourceConfidence(sc, articles, meta){
   const limitedFromReport = report.filter(r=>!r.ok || r.count===0).map(r=>r.name);
   const available = [...new Set([...(Array.isArray(sc?.availableSources)?sc.availableSources:[]), ...availableFromReport, ...fromArticles])].filter(Boolean).slice(0,10);
   const limited = [...new Set([...(Array.isArray(sc?.limitedSources)?sc.limitedSources:[]), ...limitedFromReport])].filter(Boolean).slice(0,8);
+  const groups = sourceGroups(articles);
   const note = meta?.degraded
-    ? 'Multi-source monitoring is partially degraded; ORACLE is using available public feeds plus cached or baseline signals.'
-    : 'Multi-source public monitoring is active across news, event, seismic, and space-weather feeds.';
+    ? 'Multi-source monitoring is partially degraded; ORACLE separates reporting, official sources, and public data feeds before assessment.'
+    : 'Multi-source monitoring is active; reporting, official statements, and data feeds are separated before AI assessment.';
   return {
     availableSources: available.length ? available : ['GDELT'],
     limitedSources: limited,
+    sourceGroups: groups,
     note: safeIntelText(sc?.note || note, 'Source confidence is being monitored.', (articles||[]).map(a=>a.title).join(' '))
   };
 }
+
 function topicSummary(articles=[]){
   const corpus = (articles||[]).map(a=>String(a.title||'').toLowerCase()).join(' ');
   const regions = [];
@@ -514,31 +523,81 @@ function topicSummary(articles=[]){
   return regions.length ? regions.slice(0,3).join(', ') : 'monitored regions';
 }
 
+
+function sourceClass(articleOrSource){
+  const a = typeof articleOrSource === 'string' ? { source:articleOrSource, domain:'' } : (articleOrSource || {});
+  const s = String(a.source || '').toLowerCase();
+  const d = String(a.domain || '').toLowerCase();
+  const type = String(a.sourceType || '').toLowerCase();
+
+  const reportingNames = ['reuters','ap','associated press','bbc','cnbc','npr','nhk','guardian','al jazeera','aljazeera'];
+  if(reportingNames.some(x=>s.includes(x) || d.includes(x.replace(/\s+/g,'')))) return 'reporting';
+
+  if(['usgs','noaa','nasa'].some(x=>s.includes(x) || d.includes(x))) return 'data';
+  if(type.includes('disaster') || type.includes('space-weather')) return 'data';
+
+  const officialHints = ['centcom','nato','white house','whitehouse','mod','ministry of defence','defense.gov','state.gov'];
+  if(officialHints.some(x=>s.includes(x) || d.includes(x))) return 'official';
+  if(/\.mil$|\.gov$|\.int$/.test(d) || d.includes('.mil') || d.includes('.gov')) return 'official';
+
+  if(s.includes('gdelt') || type.includes('event-feed')) return 'event';
+  if(s.includes('google news') || d.includes('news.google')) return 'aggregator';
+  return 'other';
+}
+
+function displaySourceName(src=''){
+  const s = String(src || '').trim();
+  if(!s) return 'Public source';
+  if(/centcom/i.test(s)) return 'CENTCOM';
+  if(/united states central command/i.test(s)) return 'CENTCOM';
+  if(/^ap$/i.test(s)) return 'AP';
+  return s.slice(0,24);
+}
+
+function sourceGroups(articles=[]){
+  const groups = { reporting:[], official:[], data:[], event:[], aggregator:[], other:[] };
+  for(const a of articles || []){
+    const cls = sourceClass(a);
+    const name = displaySourceName(a.source || a.domain || 'Public source');
+    if(!groups[cls].includes(name)) groups[cls].push(name);
+  }
+  Object.keys(groups).forEach(k=>groups[k]=groups[k].slice(0,8));
+  return groups;
+}
+
+function topEventSummaryFromArticle(top){
+  if(!top) return 'A monitored public report is contributing to the current risk assessment.';
+  const source = displaySourceName(top.source || 'Public source');
+  const title = clean(top.title || 'Public report under monitoring');
+  return `${source} headline under monitoring: ${title}`.slice(0,260);
+}
+
+function evidenceLabel(score=0){
+  const n = Number(score || 0);
+  if(n >= 88) return 'HIGH';
+  if(n >= 72) return 'MEDIUM';
+  return 'LIMITED';
+}
+
 function buildFacts(articles, llm, meta){
-  // v7.3: FACTS must not quote single dramatic headlines as established truth.
-  // They summarize what the available public feeds are broadly indicating.
-  const sources = getVerifiedSources(articles);
-  const sourceText = sources.length ? sources.slice(0,5).join(', ') : 'public sources';
-  const topic = topicSummary(articles);
-  const count = Array.isArray(articles) ? articles.length : 0;
+  // v8.0: FACTS summarize public source coverage. Do not promote a single dramatic headline
+  // into an established fact. Reporting, official statements, and data feeds are separated.
+  const groups = sourceGroups(articles);
   const facts = [];
+  const reporting = groups.reporting.length ? groups.reporting.join(', ') : 'monitored news sources';
+  const official = groups.official.length ? groups.official.join(', ') : '';
+  const data = groups.data.length ? groups.data.join(', ') : '';
+  const eventFeeds = [...groups.event, ...groups.aggregator].filter(Boolean).join(', ');
+  const count = Array.isArray(articles) ? articles.length : 0;
+  const topic = topicSummary(articles);
 
-  facts.push(`${sourceText}: public reporting is being monitored across ${topic}.`);
-
-  if(count > 0){
-    facts.push(`ORACLE reviewed ${count} recent public signals and grouped them by military, diplomatic, cyber, logistics, finance, and disaster categories.`);
-  } else {
-    facts.push('Live public source volume is limited; ORACLE is using conservative baseline monitoring.');
-  }
-
-  if(meta?.degraded){
-    facts.push('Source status: one or more live feeds are degraded, so cached or baseline signals may be used.');
-  } else {
-    facts.push('Source status: live public monitoring is active; details remain subject to verification by originating sources.');
-  }
-
-  facts.push('Status: verified public reporting only; ORACLE separates facts from AI assessment and outlook.');
-  return facts.slice(0,4);
+  facts.push(`Reporting: ${reporting} are monitored as public reporting across ${topic}.`);
+  if(official) facts.push(`Official / primary sources: ${official} are treated separately from independent reporting.`);
+  if(data) facts.push(`Data feeds: ${data} contribute machine-readable public signals, not narrative confirmation.`);
+  if(eventFeeds) facts.push(`Event / aggregation feeds: ${eventFeeds} are used for signal discovery and cross-checking.`);
+  facts.push(`ORACLE reviewed ${count} recent public signals and grouped them by risk category; details remain subject to originating sources.`);
+  facts.push('Status: facts, AI assessment, and 24H outlook are separated to avoid mixing reporting with interpretation.');
+  return facts.slice(0,5);
 }
 
 function buildReasoning(analyzed, topRegion){
@@ -553,6 +612,7 @@ function buildReasoning(analyzed, topRegion){
 }
 
 function buildEvidence(articles=[], meta={}, analyzed={}){
+  const groups = sourceGroups(articles);
   const sources = getVerifiedSources(articles);
   const report = Array.isArray(meta?.sourceReport) ? meta.sourceReport : [];
   const active = report.filter(r=>r.ok && r.count>0).map(r=>r.name);
@@ -561,7 +621,7 @@ function buildEvidence(articles=[], meta={}, analyzed={}){
   const articleCount = articles.length || 0;
   const crossChecks = Math.max(1, Math.min(4, sourceCount - 1));
   const reliability = sourceHealthScore(articles, meta);
-  return { sourceCount, sources: combined.length ? combined : ['Public sources'], articleCount, crossChecks, reliability };
+  return { sourceCount, sources: combined.length ? combined : ['Public sources'], articleCount, crossChecks, reliability, strength:evidenceLabel(reliability), sourceGroups:groups };
 }
 
 function conciseBrief(aiBrief='', articles=[], topRegion='Global', score=0){
@@ -595,6 +655,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
     previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
     state,
     confidence: analyzed.confidence,
+    evidenceStrength: evidenceLabel(sourceHealthScore(articles, meta)),
     sourceHealth: sourceHealthScore(articles, meta),
     facts: buildFacts(articles, llm, meta),
     outlook24h: aiOk ? normalizeOutlook(llm.outlook24h) : (score >= 50 ? 'WATCH' : 'STABLE'),
@@ -612,7 +673,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
     xPostGlobal: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null,
     xPostJapanese: aiOk ? safeIntelText(llm.xPostJapanese, '', corpus) : null,
     hashtags: aiOk ? safeHashtags(llm.hashtags) : null,
-    topEvent: { title: top.title, summary: aiOk ? safeIntelText(llm.topSummary, `${topRegion} is currently the strongest contributor to the global risk index.`, corpus) : `${topRegion} is currently the strongest contributor to the global risk index.`, source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
+    topEvent: { title: top.title, summary: topEventSummaryFromArticle(top), source: top.source || 'GDELT', sourceClass: sourceClass(top), url: top.url || 'https://www.gdeltproject.org/' },
     drivers: analyzed.drivers,
     weights: WEIGHTS,
     calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), final: score, reasoning: buildReasoning(analyzed, topRegion) },
@@ -650,8 +711,8 @@ function fallbackPayload(error){
     outlook24h:'STABLE', outlookText:'Conditions remain stable unless additional verified public signals emerge.',
     keyDrivers:['Baseline military monitoring','Limited source volume','Regional pressure only'],
     watchNext:['GDELT availability','Verified regional escalation signals','Major diplomatic or logistics changes'],
-    sourceConfidence:{availableSources:['GDELT','Google News','USGS','NOAA'],limitedSources:['Guardian optional'],note:'Live public source retrieval is degraded; ORACLE can use multiple free public feeds plus baseline signals.'},
-    verifiedSources:['GDELT','Google News','USGS','NOAA'], evidence:{sourceCount:4, sources:['GDELT','Google News','USGS','NOAA'], articleCount:0, crossChecks:2, reliability:72}, articleCount:0,
+    sourceConfidence:{availableSources:['GDELT','Google News','USGS','NOAA'],limitedSources:['Guardian optional'],sourceGroups:{reporting:[],official:[],data:['USGS','NOAA'],event:['GDELT'],aggregator:['Google News'],other:[]},note:'Live public source retrieval is degraded; ORACLE separates reporting, official sources, and public data feeds before assessment.'},
+    verifiedSources:['GDELT','Google News','USGS','NOAA'], evidence:{sourceCount:4, sources:['GDELT','Google News','USGS','NOAA'], articleCount:0, crossChecks:2, reliability:72, strength:'MEDIUM', sourceGroups:{reporting:[],official:[],data:['USGS','NOAA'],event:['GDELT'],aggregator:['Google News'],other:[]}}, articleCount:0,
     topEvent:{ title:'Public source monitoring active', summary:'No dominant global escalation signal is available from current public inputs.', source:'GDELT', url:'https://www.gdeltproject.org/' },
     drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28 },
     regions:[{name:'Ukraine',score:44,change:'+1',trend:'Watch'},{name:'Taiwan Strait',score:39,change:'0',trend:'Watch'},{name:'Middle East',score:37,change:'0',trend:'Stable'},{name:'South China Sea',score:31,change:'0',trend:'Stable'},{name:'Korea',score:25,change:'0',trend:'Stable'}],
