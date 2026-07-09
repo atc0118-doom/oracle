@@ -113,16 +113,27 @@ function renderCalc(data){
   const lines = Object.entries(drivers).map(([k,v])=>({ name:k, value:v, weight:weights[k]||0, contribution:v*(weights[k]||0) }));
   const raw = calc.raw ?? lines.reduce((s,l)=>s+l.contribution,0);
   const containment = calc.containment ?? (data.containment ?? -4);
+  const aiAdjustment = Number(calc.aiAdjustment || 0);
+  const ruleFinal = calc.ruleFinal ?? Math.round(raw + containment);
   const final = calc.final ?? data.score;
   $('rawScore').textContent = `RAW ${Math.round(raw*10)/10}`;
+  const aiLine = data.aiUsed ? `<div class="calc-total ai-calc"><span>AI JUDGEMENT</span><strong>${aiAdjustment >= 0 ? '+' : ''}${aiAdjustment.toFixed(1)}</strong></div>` : '';
+  const reason = data.scoreReason ? `<div class="calc-reason"><b>AI SCORE NOTE</b><p>${data.scoreReason}</p></div>` : '';
+  const outlook = data.outlook24h ? `<div class="calc-reason compact"><b>24H OUTLOOK</b><p>${data.outlook24h} · ${data.riskBias || 'FLAT'}</p></div>` : '';
+  const driversNote = data.keyDrivers?.length ? `<div class="calc-reason compact"><b>KEY DRIVERS</b><p>${data.keyDrivers.join(' · ')}</p></div>` : '';
+  const watchNote = data.watchItems?.length ? `<div class="calc-reason compact"><b>WATCH NEXT</b><p>${data.watchItems.join(' · ')}</p></div>` : '';
   $('calcDetail').innerHTML = lines.map(l=>`
     <div class="calc-line"><b>${l.name}</b><span>${Math.round(l.value)} × ${l.weight.toFixed(2)}</span><em>${l.contribution.toFixed(1)}</em></div>
   `).join('') + `
     <div class="calc-total"><span>RAW SCORE</span><strong>${raw.toFixed(1)}</strong></div>
     <div class="calc-total"><span>STABILITY ADJUSTMENT</span><strong>${Number(containment).toFixed(1)}</strong></div>
+    ${aiLine}
+    <div class="calc-total"><span>RULE SCORE</span><strong>${Math.round(ruleFinal)}</strong></div>
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
+    ${reason}${outlook}${driversNote}${watchNote}
   `;
 }
+
 async function loadRisk(){
   try{
     const res = await fetch('/api/risk', { cache:'default' });
@@ -136,9 +147,10 @@ async function loadRisk(){
 }
 function generatePost(){
   const d = currentData || fallback;
+  if(d.xPost) return `${d.xPost}\n\nhttps://oracle-rho-flax.vercel.app\n\n#ORACLE #WorldRisk #Geopolitics #GlobalRisk #AI`;
   const event = d.topEvent || fallback.topEvent;
   const regions = (d.regions || fallback.regions).slice(0,3).map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${d.score} ${d.state}\n\nTop Event\n${event.title}\n${event.summary}\n\nHot Regions\n${regions}\n\nAI Assessment\n${d.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n#ORACLE #WorldRisk #Geopolitics #GlobalRisk #AI`; 
+  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${d.score} ${d.state}\n24H Outlook: ${d.outlook24h || 'WATCH'}\n\nTop Event\n${event.title}\n${event.summary}\n\nHot Regions\n${regions}\n\nAI Assessment\n${d.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n#ORACLE #WorldRisk #Geopolitics #GlobalRisk #AI`; 
 }
 function setup(){
   const params = new URLSearchParams(location.search);
