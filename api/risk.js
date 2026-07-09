@@ -102,40 +102,83 @@ function sourceName(domain=''){
   if(d.includes('aljazeera')) return 'Al Jazeera';
   return d ? d.split('.')[0].slice(0,16) : 'GDELT';
 }
-function countTerms(text, terms){ return terms.reduce((n,t)=> n + (text.includes(t) ? 1 : 0), 0); }
+function countTerms(text, terms){
+  return terms.reduce((n,t)=>{
+    const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = text.match(new RegExp(escaped, 'g'));
+    return n + (m ? m.length : 0);
+  }, 0);
+}
+
+function severitySignals(corpus){
+  const terms = {
+    directMilitary: ['airstrike','air strike','missile strike','military strike','strikes on','drone attack','missile attack','bombing','shelling','invasion'],
+    escalation: ['escalate','escalation','retaliation','retaliatory','mobilization','nuclear','emergency meeting'],
+    majorActors: ['united states','u.s.','us military','iran','israel','russia','china','nato','taiwan'],
+    globalSpillover: ['oil','tanker','red sea','strait','shipping','sanction','market','evacuation']
+  };
+  const out = {};
+  for(const [k,v] of Object.entries(terms)) out[k] = countTerms(corpus, v);
+  out.combined = out.directMilitary*8 + out.escalation*6 + out.majorActors*2 + out.globalSpillover*3;
+  return out;
+}
+
+function crisisFloorFromSignals(corpus, drivers, regions){
+  const sev = severitySignals(corpus);
+  let floor = 8;
+  if(sev.directMilitary >= 1 && sev.majorActors >= 2) floor = Math.max(floor, 38);
+  if((corpus.includes('iran') && corpus.includes('israel') && sev.directMilitary >= 1) || (corpus.includes('u.s.') && corpus.includes('iran') && sev.directMilitary >= 1)) floor = Math.max(floor, 44);
+  if(corpus.includes('nuclear') || corpus.includes('invasion')) floor = Math.max(floor, 48);
+  if(regions[0]?.score >= 60) floor = Math.max(floor, 34);
+  if(drivers.Military >= 60 && drivers.Diplomatic >= 35) floor = Math.max(floor, 32);
+  return floor;
+}
 
 function analyzeArticles(articles){
   const corpus = articles.map(a=>a.title).join(' ').toLowerCase();
   const total = Math.max(articles.length,1);
+  const sev = severitySignals(corpus);
 
   const drivers = {};
   Object.entries(CATEGORY_KEYWORDS).forEach(([cat, terms])=>{
     const count = countTerms(corpus, terms);
-    const base = cat === 'Military' ? 16 : cat === 'Diplomatic' ? 10 : cat === 'Cyber' ? 6 : 5;
-    drivers[cat] = clamp(Math.round(base + count * 8 + Math.min(total,60)*0.15), 0, 90);
+    const base = cat === 'Military' ? 18 : cat === 'Diplomatic' ? 12 : cat === 'Cyber' ? 7 : cat === 'Logistics' ? 7 : 5;
+    let value = base + count * 5.7 + Math.min(total,60)*0.18;
+    if(cat === 'Military') value += sev.directMilitary*9 + sev.escalation*4 + sev.majorActors*1.3;
+    if(cat === 'Diplomatic') value += sev.escalation*3 + countTerms(corpus, ['sanction','talks','ceasefire','summit','un '])*4;
+    if(cat === 'Logistics') value += sev.globalSpillover*3;
+    if(cat === 'Finance') value += countTerms(corpus, ['oil','gas','market','stocks','currency'])*4;
+    drivers[cat] = clamp(Math.round(value), 0, 95);
   });
 
   const regions = REGION_KEYWORDS.map(r=>{
     const c = countTerms(corpus, r.terms);
-    const score = clamp(Math.round(10 + c*12 + drivers.Military*0.20 + drivers.Diplomatic*0.08 + drivers.Cyber*0.04), 8, 88);
-    return { name:r.name, score, change: c>2?'+2':c>0?'+1':'0', trend:c>2?'Rising':c>0?'Watch':'Stable', count:c };
+    let score = 12 + c*9 + drivers.Military*0.24 + drivers.Diplomatic*0.10 + drivers.Cyber*0.04;
+    if(r.name === 'Middle East' && (corpus.includes('iran') || corpus.includes('israel') || corpus.includes('gaza'))) score += sev.directMilitary*7 + sev.escalation*3;
+    if(r.name === 'Ukraine' && (corpus.includes('ukraine') || corpus.includes('russia'))) score += countTerms(corpus, ['missile','drone','strike','attack'])*2;
+    if(r.name === 'Taiwan Strait' && (corpus.includes('taiwan') || corpus.includes('china'))) score += countTerms(corpus, ['military','navy','air force','strait'])*2;
+    score = clamp(Math.round(score), 8, 92);
+    return { name:r.name, score, change: c>2?'+2':c>0?'+1':'0', trend:score>=50?'Rising':c>0?'Watch':'Stable', count:c };
   }).sort((a,b)=>b.score-a.score).slice(0,5);
 
   const raw = Object.entries(drivers).reduce((sum,[k,v])=> sum + v*(WEIGHTS[k]||0), 0);
-  const adjustment = stabilityAdjustment(drivers, regions, total);
-  const final = clamp(Math.round(raw + adjustment), 5, 92);
-  const confidence = clamp(Math.round(60 + Math.min(articles.length,60)*0.4 + (process.env.OPENAI_API_KEY ? 8 : 0)), 55, 94);
+  const adjustment = stabilityAdjustment(drivers, regions, total, sev);
+  const floor = crisisFloorFromSignals(corpus, drivers, regions);
+  const final = clamp(Math.max(Math.round(raw + adjustment), floor), 5, 92);
+  const confidence = clamp(Math.round(62 + Math.min(articles.length,60)*0.35 + (process.env.OPENAI_API_KEY ? 8 : 0) + Math.min(sev.combined,20)*0.25), 55, 96);
   const top = pickTopEvent(articles, regions);
 
-  return { drivers, regions, raw, adjustment, final, confidence, top, total };
+  return { drivers, regions, raw, adjustment, floor, severity:sev, final, confidence, top, total };
 }
 
-function stabilityAdjustment(drivers, regions, total){
-  let adj = -4;
-  if(drivers.Military > 55 && drivers.Diplomatic > 35) adj += 3;
-  if(regions[0]?.score > 65) adj += 3;
-  if(total < 12) adj -= 5;
-  if(drivers.Logistics < 25 && drivers.Finance < 25) adj -= 2;
+function stabilityAdjustment(drivers, regions, total, sev={}){
+  let adj = -3;
+  if(drivers.Military > 55 && drivers.Diplomatic > 35) adj += 4;
+  if(regions[0]?.score > 65) adj += 4;
+  if(sev.directMilitary >= 1 && sev.majorActors >= 2) adj += 5;
+  if(sev.escalation >= 2) adj += 2;
+  if(total < 12) adj -= 4;
+  if(drivers.Logistics < 25 && drivers.Finance < 25 && sev.globalSpillover < 2) adj -= 2;
   return Math.round(adj*10)/10;
 }
 
@@ -164,7 +207,8 @@ Required JSON keys:
 - topSummary: 1-2 concise sentences explaining the selected event's relevance.
 - outlook24h: one of STABLE, WATCH, ELEVATED, COOLING.
 - riskBias: one of RISING, FLAT, FALLING.
-- scoreAdjustment: integer from -4 to 4. Use this only for AI judgement over the rule score; be conservative.
+- suggestedScore: integer 0-100 representing your independent global risk score from supplied headlines and calculated signals. Be conservative but do not understate direct military escalation involving major states.
+- scoreAdjustment: integer from -8 to 12. Use this only for AI judgement over the rule score; be conservative.
 - keyDrivers: array of exactly 3 short strings naming the strongest current risk drivers.
 - watchItems: array of exactly 3 short strings naming what to monitor next.
 - xPost: concise English X post under 650 characters.
@@ -174,6 +218,8 @@ Tone: calm, analytical, non-alarmist. Avoid prophecy, certainty, or sensational 
 Source mode: ${source?.sourceMode || 'unknown'}
 Source error: ${source?.sourceError || 'none'}
 Rule score: ${analyzed.final}
+Crisis floor: ${analyzed.floor}
+Severity signals: ${JSON.stringify(analyzed.severity)}
 Drivers: ${JSON.stringify(analyzed.drivers)}
 Regions: ${JSON.stringify(analyzed.regions)}
 Calculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}
@@ -241,8 +287,11 @@ function normalizeAi(ai, model){
 
 function buildPayload(analyzed, articles, llm, source){
   const aiOk = Boolean(llm && !llm.error);
-  const aiAdjustment = aiOk ? clamp(Math.round(Number(llm.scoreAdjustment || 0)), -4, 4) : 0;
-  const score = clamp(Math.round(analyzed.final + aiAdjustment), 5, 92);
+  const aiAdjustment = aiOk ? clamp(Math.round(Number(llm.scoreAdjustment || 0)), -8, 12) : 0;
+  const aiSuggested = aiOk && Number.isFinite(Number(llm.suggestedScore)) ? clamp(Math.round(Number(llm.suggestedScore)), 0, 100) : null;
+  const ruleWithAi = analyzed.final + aiAdjustment;
+  const blended = aiSuggested === null ? ruleWithAi : Math.round(ruleWithAi * 0.55 + aiSuggested * 0.45);
+  const score = clamp(Math.max(blended, analyzed.floor || 5), 5, 92);
   const state = stateFromScore(score);
   const topRegion = analyzed.regions[0]?.name || 'Global';
   const selectedIndex = aiOk ? clamp(Math.round(Number(llm.topEventIndex || 1)), 1, Math.max(articles.length,1)) - 1 : -1;
@@ -261,7 +310,7 @@ function buildPayload(analyzed, articles, llm, source){
   return {
     ok:true,
     mode:'live',
-    engineVersion:'ORACLE ENGINE v3.4',
+    engineVersion:'ORACLE ENGINE v4.0',
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
     aiError: llm?.error || source?.sourceError || null,
@@ -290,7 +339,7 @@ function buildPayload(analyzed, articles, llm, source){
     },
     drivers: analyzed.drivers,
     weights: WEIGHTS,
-    calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), aiAdjustment, final: score, ruleFinal: analyzed.final },
+    calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), aiAdjustment, aiSuggestedScore: aiSuggested, crisisFloor: analyzed.floor, final: score, ruleFinal: analyzed.final },
     regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend })),
     timeline: timeline.length ? timeline : [{time:'NOW', text:'Monitoring active.'}],
     metrics:{
