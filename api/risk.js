@@ -146,12 +146,30 @@ async function aiAssessment(analyzed, articles, sourceError=null){
 
   try{
     const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n');
-    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze only the supplied public headlines and calculated signals. Return strict JSON only with keys: assessment, brief, topSummary, scoreReason, xPost, xPostGlobal, xPostJapanese, hashtags. No markdown. Keep tone calm, concise, non-alarmist.
+    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze ONLY the supplied public headlines and calculated signals.
+Return strict JSON only with keys: assessment, brief, topSummary, scoreReason, xPost, xPostGlobal, xPostJapanese, hashtags. No markdown.
+
+CRITICAL SAFETY / RELIABILITY RULES:
+- Do not invent events, casualties, strikes, declarations, locations, dates, or sources.
+- Do not state an event as confirmed unless the supplied headline clearly states it.
+- Prefer cautious language: "reported", "public signals indicate", "monitored headlines suggest", "appears", "may", "remains under watch".
+- If sources are degraded or baseline signals are used, explicitly say monitoring is based on limited public signals.
+- Do not predict war, collapse, escalation, or attacks as certainty.
+- Avoid alarmist wording. ORACLE observes and assesses; it does not claim prophecy.
+- Keep statements source-bound and concise.
 
 X post rules:
-- xPostGlobal: English post under 650 characters, world-facing tone.
-- xPostJapanese: Japanese post under 650 Japanese characters, calm and concise.
-- hashtags: array of 8 to 14 relevant English hashtags. Always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Add topical tags only when supported by supplied headlines, such as Ukraine, Russia, Taiwan, China, MiddleEast, Iran, Israel, CyberSecurity, Earthquake, Logistics, Energy, Geopolitics.\n\nGlobal score: ${analyzed.final}\nDrivers: ${JSON.stringify(analyzed.drivers)}\nRegions: ${JSON.stringify(analyzed.regions)}\nCalculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}\nSource status: ${sourceError ? 'DEGRADED: '+sourceError : 'LIVE'}\nHeadlines:\n${headlines}`;
+- xPostGlobal: English post under 650 characters, world-facing tone, source-bound, cautious.
+- xPostJapanese: Japanese post under 650 Japanese characters, calm and concise, source-bound.
+- hashtags: array of 8 to 14 relevant English hashtags. Always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Add topical tags only when supported by supplied headlines, such as Ukraine, Russia, Taiwan, China, MiddleEast, Iran, Israel, CyberSecurity, Earthquake, Logistics, Energy, Geopolitics.
+
+Global score: ${analyzed.final}
+Drivers: ${JSON.stringify(analyzed.drivers)}
+Regions: ${JSON.stringify(analyzed.regions)}
+Calculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}
+Source status: ${sourceError ? 'DEGRADED: '+sourceError : 'LIVE'}
+Headlines:
+${headlines}`;
 
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method:'POST',
@@ -181,6 +199,39 @@ X post rules:
   }
 }
 
+
+function safeIntelText(text='', fallback='Public signals remain under monitoring.'){
+  let out = String(text || '').replace(/\s+/g,' ').trim();
+  if(!out) return fallback;
+
+  // Keep ORACLE language source-bound. This is deliberately conservative:
+  // it softens unsupported-sounding certainty without changing factual meaning.
+  const riskyStarts = [
+    [/^The U\.S\. has initiated/i, 'Public reporting indicates the U.S. may have initiated'],
+    [/^The U\.S\. initiated/i, 'Public reporting indicates the U.S. initiated'],
+    [/^Iran has/i, 'Public reporting indicates Iran has'],
+    [/^Israel has/i, 'Public reporting indicates Israel has'],
+    [/^Russia has/i, 'Public reporting indicates Russia has'],
+    [/^China has/i, 'Public reporting indicates China has']
+  ];
+  for(const [re, rep] of riskyStarts){ out = out.replace(re, rep); }
+
+  // Avoid absolute forecasts.
+  out = out.replace(/\bwill escalate\b/gi, 'may escalate');
+  out = out.replace(/\bwill lead to\b/gi, 'may contribute to');
+  out = out.replace(/\bimminent global escalation\b/gi, 'immediate global escalation signal');
+  return out.slice(0, 520);
+}
+
+function safeHashtags(tags){
+  const base = ['ORACLE','WorldRiskIndex','GlobalRisk','AIAnalysis','OSINT'];
+  const cleanTags = Array.isArray(tags) ? tags : [];
+  const allowed = cleanTags
+    .map(t=>String(t).replace(/^#/,'').replace(/[^A-Za-z0-9_]/g,''))
+    .filter(Boolean);
+  return [...new Set([...base, ...allowed])].slice(0,14);
+}
+
 function buildPayload(analyzed, articles, llm, meta={}){
   const score = analyzed.final;
   const state = stateFromScore(score);
@@ -202,14 +253,14 @@ function buildPayload(analyzed, articles, llm, meta={}){
     state,
     confidence: analyzed.confidence,
     sourceHealth: meta.degraded ? 72 : (articles.length > 10 ? 96 : 82),
-    brief: aiOk ? llm.brief : `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`,
-    assessment: aiOk ? llm.assessment : `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
-    scoreReason: aiOk ? llm.scoreReason : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`,
-    xPost: aiOk ? (llm.xPostGlobal || llm.xPost) : null,
-    xPostGlobal: aiOk ? (llm.xPostGlobal || llm.xPost) : null,
-    xPostJapanese: aiOk ? llm.xPostJapanese : null,
-    hashtags: aiOk ? (Array.isArray(llm.hashtags) ? llm.hashtags : null) : null,
-    topEvent: { title: top.title, summary: aiOk ? llm.topSummary : `${topRegion} is currently the strongest contributor to the global risk index.`, source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
+    brief: aiOk ? safeIntelText(llm.brief, `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`) : `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`,
+    assessment: aiOk ? safeIntelText(llm.assessment, `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`) : `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
+    scoreReason: aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`) : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`,
+    xPost: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '') : null,
+    xPostGlobal: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '') : null,
+    xPostJapanese: aiOk ? safeIntelText(llm.xPostJapanese, '') : null,
+    hashtags: aiOk ? safeHashtags(llm.hashtags) : null,
+    topEvent: { title: top.title, summary: aiOk ? safeIntelText(llm.topSummary, `${topRegion} is currently the strongest contributor to the global risk index.`) : `${topRegion} is currently the strongest contributor to the global risk index.`, source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
     drivers: analyzed.drivers,
     weights: WEIGHTS,
     calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), final: score },
