@@ -325,7 +325,7 @@ function buildPayload(analyzed, articles, llm, source){
   return {
     ok:true,
     mode:'live',
-    engineVersion:'ORACLE ENGINE v4.2 REASONING OUTLOOK',
+    engineVersion:'ORACLE ENGINE v5.1 PUBLIC RELEASE',
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
     aiError: llm?.error || source?.sourceError || null,
