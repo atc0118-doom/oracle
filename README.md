@@ -1,7 +1,10 @@
-# ORACLE v5.2 AI Resilience Patch
+# ORACLE v5.3 AI Safety Layer
 
-- Keeps AI running when GDELT returns 429
-- Uses short server cache when available
-- Uses conservative baseline signals when public source retrieval is degraded
-- Keeps `/api/risk` alive instead of falling fully into fallback mode
-- Preserves Global/Japanese post generation and tags
+Changes:
+- Adds AI Safety / Reliability Layer to prompts.
+- Prevents unsupported definitive claims.
+- Uses cautious source-bound language such as reported / public signals indicate.
+- Keeps Global and Japanese X post generation.
+- Keeps GDELT 429 resilience and AI analysis fallback.
+
+Deploy: upload all files and redeploy on Vercel.
