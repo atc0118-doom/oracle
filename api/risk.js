@@ -17,18 +17,19 @@ const CATEGORY_KEYWORDS = {
 };
 
 const WEIGHTS = { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
-const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null });
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null });
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 6500;
 
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=240');
 
   try{
-    const { articles, sourceError, degraded } = await loadArticles();
+    const { articles, sourceError, degraded, sourceReport } = await loadArticles();
     const analyzed = analyzeArticles(articles);
     const llm = await aiAssessment(analyzed, articles, sourceError);
-    const payload = buildPayload(analyzed, articles, llm, { sourceError, degraded });
+    const payload = buildPayload(analyzed, articles, llm, { sourceError, degraded, sourceReport });
     res.status(200).json(payload);
   }catch(error){
     res.status(200).json(fallbackPayload(error?.message || 'unknown'));
@@ -36,33 +37,69 @@ export default async function handler(req, res){
 }
 
 async function loadArticles(){
-  try{
-    const articles = await fetchGdelt();
-    if(articles.length){
-      ORACLE_CACHE.articles = articles;
-      ORACLE_CACHE.ts = Date.now();
-      ORACLE_CACHE.lastError = null;
-      return { articles, sourceError:null, degraded:false };
-    }
-  }catch(error){
-    const msg = error?.message || 'source_error';
-    ORACLE_CACHE.lastError = msg;
-    if(ORACLE_CACHE.articles?.length){
-      return { articles:ORACLE_CACHE.articles, sourceError:msg + ' · using cache', degraded:true };
-    }
-    return { articles:baselineArticles(msg), sourceError:msg + ' · using baseline signals', degraded:true };
+  const now = Date.now();
+  if(ORACLE_CACHE.articles?.length && now - ORACLE_CACHE.ts < CACHE_TTL_MS){
+    return { articles:ORACLE_CACHE.articles, sourceError:ORACLE_CACHE.lastError, degraded:false, sourceReport:ORACLE_CACHE.sourceReport || [] };
   }
-  return { articles:baselineArticles('empty source response'), sourceError:'empty source response · using baseline signals', degraded:true };
+
+  const collectors = [
+    ['GDELT', fetchGdelt],
+    ['Google News', fetchGoogleNews],
+    ['USGS', fetchUSGS],
+    ['NOAA', fetchNOAA],
+    ['Guardian', fetchGuardian]
+  ];
+
+  const settled = await Promise.allSettled(collectors.map(async ([name, fn])=>{
+    const items = await fn();
+    return { name, ok:true, count:items.length, items };
+  }));
+
+  const report = settled.map((r,i)=>{
+    const name = collectors[i][0];
+    if(r.status === 'fulfilled') return { name, ok:true, count:r.value.count };
+    return { name, ok:false, count:0, error:r.reason?.message || 'source_error' };
+  });
+
+  let articles = [];
+  for(const r of settled){
+    if(r.status === 'fulfilled') articles.push(...r.value.items);
+  }
+  articles = dedupeArticles(articles).slice(0,80);
+
+  const failed = report.filter(r=>!r.ok).map(r=>`${r.name} ${r.error}`);
+  const sourceError = failed.length ? failed.join(' · ') : null;
+  const available = report.filter(r=>r.ok && r.count>0).length;
+
+  if(articles.length){
+    ORACLE_CACHE.articles = articles;
+    ORACLE_CACHE.ts = Date.now();
+    ORACLE_CACHE.lastError = sourceError;
+    ORACLE_CACHE.sourceReport = report;
+    return { articles, sourceError, degraded: available < 2, sourceReport:report };
+  }
+
+  if(ORACLE_CACHE.articles?.length){
+    return { articles:ORACLE_CACHE.articles, sourceError:(sourceError || 'all sources empty') + ' · using cache', degraded:true, sourceReport:report };
+  }
+
+  return { articles:baselineArticles(sourceError || 'all public sources unavailable'), sourceError:(sourceError || 'all public sources unavailable') + ' · using baseline signals', degraded:true, sourceReport:report };
+}
+
+async function fetchWithTimeout(url, options={}){
+  const controller = new AbortController();
+  const timeout = setTimeout(()=>controller.abort(), options.timeout || FETCH_TIMEOUT_MS);
+  try{
+    return await fetch(url, { ...options, signal:controller.signal });
+  }finally{
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchGdelt(){
-  const now = Date.now();
-  if(ORACLE_CACHE.articles?.length && now - ORACLE_CACHE.ts < CACHE_TTL_MS){
-    return ORACLE_CACHE.articles;
-  }
   const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
-  const r = await fetch(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/5.2' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
   const j = await r.json();
   return (j.articles || []).map(a=>({
@@ -71,8 +108,92 @@ async function fetchGdelt(){
     source: sourceName(a.domain),
     domain: a.domain || '',
     seen: a.seendate || '',
-    language: a.language || ''
+    language: a.language || '',
+    sourceType:'event-feed'
   })).filter(a=>a.title && a.url).slice(0,45);
+}
+
+async function fetchGoogleNews(){
+  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China) when:1d');
+  const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  if(!r.ok) throw new Error('google_news ' + r.status);
+  const xml = await r.text();
+  return parseRss(xml, 'Google News').slice(0,25);
+}
+
+async function fetchGuardian(){
+  const key = process.env.GUARDIAN_API_KEY;
+  if(!key) return [];
+  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China');
+  const url = `https://content.guardianapis.com/search?q=${q}&section=world|technology|business|environment&show-fields=trailText&order-by=newest&page-size=20&api-key=${key}`;
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  if(!r.ok) throw new Error('guardian ' + r.status);
+  const j = await r.json();
+  return (j.response?.results || []).map(a=>({
+    title: clean(a.webTitle),
+    url: a.webUrl,
+    source:'Guardian',
+    domain:'theguardian.com',
+    seen:a.webPublicationDate || '',
+    language:'English',
+    sourceType:'news-api'
+  })).filter(a=>a.title && a.url);
+}
+
+async function fetchUSGS(){
+  const url = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.geojson';
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  if(!r.ok) throw new Error('usgs ' + r.status);
+  const j = await r.json();
+  return (j.features || []).slice(0,12).map(f=>({
+    title:`Earthquake ${f.properties?.mag || ''} - ${f.properties?.place || 'location under review'}`,
+    url:f.properties?.url || 'https://earthquake.usgs.gov/',
+    source:'USGS',
+    domain:'usgs.gov',
+    seen:f.properties?.time ? new Date(f.properties.time).toISOString() : '',
+    language:'English',
+    sourceType:'disaster-feed'
+  })).filter(a=>a.title);
+}
+
+async function fetchNOAA(){
+  const url = 'https://services.swpc.noaa.gov/products/alerts.json';
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  if(!r.ok) throw new Error('noaa ' + r.status);
+  const j = await r.json();
+  const rows = Array.isArray(j) ? j.slice(-10) : [];
+  return rows.map(row=>{
+    const msg = Array.isArray(row) ? row.join(' ') : JSON.stringify(row);
+    return { title:`Space weather alert: ${clean(msg).slice(0,140)}`, url:'https://www.swpc.noaa.gov/', source:'NOAA', domain:'noaa.gov', seen:'', language:'English', sourceType:'space-weather' };
+  }).filter(a=>a.title && !/message issue_datetime/.test(a.title.toLowerCase())).slice(0,8);
+}
+
+function parseRss(xml, fallbackSource='RSS'){
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(m=>m[1]);
+  return items.map(block=>{
+    const title = decodeXml((block.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/)?.[1] || block.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '').replace(/ - [^-]+$/,''));
+    const url = decodeXml(block.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '');
+    const source = decodeXml(block.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] || fallbackSource);
+    const pub = decodeXml(block.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || '');
+    return { title:clean(title), url, source:clean(source) || fallbackSource, domain:'news.google.com', seen:pub, language:'English', sourceType:'rss' };
+  }).filter(a=>a.title && a.url);
+}
+
+function decodeXml(s=''){
+  return String(s).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+}
+
+function dedupeArticles(articles){
+  const seen = new Set();
+  const out = [];
+  for(const a of articles){
+    const key = clean(a.title).toLowerCase().replace(/[^a-z0-9]+/g,' ').split(' ').slice(0,12).join(' ');
+    if(!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(a);
+  }
+  return out;
 }
 
 function baselineArticles(reason='source degraded'){
@@ -119,7 +240,8 @@ function analyzeArticles(articles){
   const raw = Object.entries(drivers).reduce((sum,[k,v])=> sum + v*(WEIGHTS[k]||0), 0);
   const adjustment = stabilityAdjustment(drivers, regions, total);
   const final = clamp(Math.round(raw + adjustment), 5, 92);
-  const confidence = clamp(Math.round(60 + Math.min(articles.length,60)*0.4 + (process.env.OPENAI_API_KEY ? 8 : 0)), 55, 94);
+  const sourceDiversity = new Set(articles.map(a=>a.source).filter(Boolean)).size;
+  const confidence = clamp(Math.round(58 + Math.min(articles.length,80)*0.28 + sourceDiversity*3 + (process.env.OPENAI_API_KEY ? 8 : 0)), 55, 96);
   const top = pickTopEvent(articles, regions);
 
   return { drivers, regions, raw, adjustment, final, confidence, top, total };
@@ -308,12 +430,19 @@ function getVerifiedSources(articles){
 }
 
 function normalizeSourceConfidence(sc, articles, meta){
-  const sources = [...new Set((articles||[]).map(a=>a.source).filter(Boolean))].slice(0,8);
-  const limited = meta?.degraded ? ['GDELT'] : [];
+  const report = Array.isArray(meta?.sourceReport) ? meta.sourceReport : [];
+  const fromArticles = [...new Set((articles||[]).map(a=>a.source).filter(Boolean))];
+  const availableFromReport = report.filter(r=>r.ok && r.count>0).map(r=>r.name);
+  const limitedFromReport = report.filter(r=>!r.ok || r.count===0).map(r=>r.name);
+  const available = [...new Set([...(Array.isArray(sc?.availableSources)?sc.availableSources:[]), ...availableFromReport, ...fromArticles])].filter(Boolean).slice(0,10);
+  const limited = [...new Set([...(Array.isArray(sc?.limitedSources)?sc.limitedSources:[]), ...limitedFromReport])].filter(Boolean).slice(0,8);
+  const note = meta?.degraded
+    ? 'Multi-source monitoring is partially degraded; ORACLE is using available public feeds plus cached or baseline signals.'
+    : 'Multi-source public monitoring is active across news, event, seismic, and space-weather feeds.';
   return {
-    availableSources: Array.isArray(sc?.availableSources) ? sc.availableSources.slice(0,8) : sources,
-    limitedSources: Array.isArray(sc?.limitedSources) ? sc.limitedSources.slice(0,5) : limited,
-    note: safeIntelText(sc?.note || (meta?.degraded ? 'Some public sources are degraded; ORACLE is using cached or baseline signals.' : 'Public source coverage is currently available for monitored signals.'), 'Source confidence is being monitored.', (articles||[]).map(a=>a.title).join(' '))
+    availableSources: available.length ? available : ['GDELT'],
+    limitedSources: limited,
+    note: safeIntelText(sc?.note || note, 'Source confidence is being monitored.', (articles||[]).map(a=>a.title).join(' '))
   };
 }
 function buildFacts(articles, llm, meta){
@@ -362,7 +491,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
     previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
     state,
     confidence: analyzed.confidence,
-    sourceHealth: meta.degraded ? 72 : (articles.length > 10 ? 96 : 82),
+    sourceHealth: sourceHealthScore(articles, meta),
     facts: buildFacts(articles, llm, meta),
     outlook24h: aiOk ? normalizeOutlook(llm.outlook24h) : (score >= 50 ? 'WATCH' : 'STABLE'),
     outlookText: aiOk ? safeIntelText(llm.outlookText, 'Available public signals suggest conditions should continue to be monitored over the next 24 hours.', corpus) : 'Available public signals suggest conditions should continue to be monitored over the next 24 hours.',
@@ -392,6 +521,15 @@ function buildPayload(analyzed, articles, llm, meta={}){
   };
 }
 
+function sourceHealthScore(articles, meta){
+  const report = Array.isArray(meta?.sourceReport) ? meta.sourceReport : [];
+  if(!report.length) return meta?.degraded ? 72 : (articles.length > 10 ? 92 : 82);
+  const active = report.filter(r=>r.ok && r.count>0).length;
+  const total = Math.max(report.length,1);
+  const volume = Math.min((articles||[]).length,80) / 80;
+  return clamp(Math.round(55 + (active/total)*28 + volume*13), 55, 98);
+}
+
 function stateFromScore(s){ if(s>=70)return'CRITICAL'; if(s>=50)return'HIGH'; if(s>=30)return'WATCH'; return'STABLE'; }
 function clamp(n,min,max){ return Math.max(min, Math.min(max, Number(n)||0)); }
 function round1(n){ return Math.round(Number(n||0)*10)/10; }
@@ -406,8 +544,8 @@ function fallbackPayload(error){
     outlook24h:'STABLE', outlookText:'Conditions remain stable unless additional verified public signals emerge.',
     keyDrivers:['Baseline military monitoring','Limited source volume','Regional pressure only'],
     watchNext:['GDELT availability','Verified regional escalation signals','Major diplomatic or logistics changes'],
-    sourceConfidence:{availableSources:['GDELT'],limitedSources:['GDELT'],note:'Live public source retrieval is degraded.'},
-    verifiedSources:['GDELT'],
+    sourceConfidence:{availableSources:['GDELT','Google News','USGS','NOAA'],limitedSources:['Guardian optional'],note:'Live public source retrieval is degraded; ORACLE can use multiple free public feeds plus baseline signals.'},
+    verifiedSources:['GDELT','Google News','USGS','NOAA'],
     topEvent:{ title:'Public source monitoring active', summary:'No dominant global escalation signal is available from current public inputs.', source:'GDELT', url:'https://www.gdeltproject.org/' },
     drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28 },
     regions:[{name:'Ukraine',score:44,change:'+1',trend:'Watch'},{name:'Taiwan Strait',score:39,change:'0',trend:'Watch'},{name:'Middle East',score:37,change:'0',trend:'Stable'},{name:'South China Sea',score:31,change:'0',trend:'Stable'},{name:'Korea',score:25,change:'0',trend:'Stable'}],
