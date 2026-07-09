@@ -1,56 +1,156 @@
+const $ = (id) => document.getElementById(id);
+let currentData = null;
+let lastLoadedAt = Date.now();
+
 const fallback = {
-  score: 38, delta: 2, state: 'WATCH', confidence: 88, sourceHealth: 96,
+  ok: true,
+  mode: 'rule-based fallback',
+  score: 28,
+  previousScore: 25,
+  state: 'WATCH',
+  confidence: 74,
+  updatedAt: new Date().toISOString(),
+  sourceHealth: 88,
+  aiMode: 'RULE BASED',
   brief: 'Regional tensions remain elevated. Global escalation risk remains contained.',
-  assessment: 'AI detected no synchronized global escalation. Highest pressure remains concentrated around Ukraine and the Taiwan Strait. Confidence remains high due to multi-source confirmation.',
-  topEvent: { title:'Taiwan Strait', source:'GDELT', summary:'Military signal remains under monitoring. No immediate global escalation signal detected.', url:'https://www.gdeltproject.org/' },
-  drivers: [ ['Military',48,.35], ['Diplomatic',48,.20], ['Cyber',20,.15], ['Logistics',15,.15], ['Finance',12,.10], ['Disaster',4,.05] ],
-  regions: [ ['Ukraine',55,'Military','▲ +1'], ['Taiwan Strait',50,'Military','▲ +2'], ['Middle East',48,'Diplomatic','→ 0'], ['South China Sea',40,'Military','→ 0'], ['Korea',36,'Watch','→ 0'] ],
-  timeline: [ ['14:20','Military signal remains under monitoring.'], ['13:10','Regional statements indicate continued diplomatic friction.'], ['11:50','No broad escalation signal detected across monitored sources.'], ['09:30','Logistics and market stress remain contained.'] ],
-  sources: ['GDELT','Reuters','AP','BBC','NHK','Al Jazeera','USGS','NASA','MarineTraffic','FlightRadar24'],
-  metrics: { activeConflicts:7, activeConflictsMeta:'+1 / 24H · MONITORED', milFlights:'Elevated', milFlightsMeta:'186 SORTIES DETECTED', cyberStatus:'Medium', cyberStatusMeta:'247 EVENTS / 24H', logStatus:'Stable', logStatusMeta:'PORT DELAY +3%', eventsAnalyzed:4812, countries:211 }
+  assessment: 'AI-assisted rules detected elevated regional pressure without synchronized global escalation.',
+  topEvent: { title: 'Global signals under monitoring', summary: 'Public signals indicate localized pressure across monitored regions.', source: 'GDELT', url: 'https://www.gdeltproject.org/' },
+  drivers: { Military: 42, Diplomatic: 32, Cyber: 18, Logistics: 12, Finance: 9, Disaster: 6 },
+  calculation: { raw: 32.6, containment: -4.6, final: 28, lines: [] },
+  regions: [
+    { name: 'Ukraine', score: 56, change: '+2', trend: 'Rising' },
+    { name: 'Taiwan Strait', score: 49, change: '+1', trend: 'Watch' },
+    { name: 'Middle East', score: 45, change: '0', trend: 'Stable' },
+    { name: 'South China Sea', score: 38, change: '+1', trend: 'Watch' },
+    { name: 'Korea', score: 31, change: '0', trend: 'Stable' }
+  ],
+  timeline: [
+    { time: 'NOW', text: 'Public event monitoring active.' },
+    { time: '-15M', text: 'AI-assisted classification completed.' },
+    { time: '-60M', text: 'Risk drivers recalculated.' }
+  ],
+  metrics: { conflicts: '7', conflictsSub: 'MONITORED', flights: 'WATCH', flightsSub: 'PUBLIC SIGNALS', cyber: 'WATCH', cyberSub: 'LOW SURGE', logistics: 'STABLE', logisticsSub: 'CONTAINED' }
 };
-const el=id=>document.getElementById(id);
-const fmtTime=()=> new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Asia/Tokyo'}).format(new Date())+' JST';
-function level(score){ if(score>=75)return'CRITICAL'; if(score>=55)return'HIGH'; if(score>=30)return'WATCH'; return'STABLE'; }
-function clone(d){ return JSON.parse(JSON.stringify(d)); }
 
-function normalize(d){
-  const merged = {...fallback, ...d, topEvent:{...fallback.topEvent, ...(d.topEvent||{})}, metrics:{...fallback.metrics, ...(d.metrics||{})}, drivers:d.drivers||fallback.drivers, regions:d.regions||fallback.regions, timeline:d.timeline||fallback.timeline, sources:(d.sources||fallback.sources).map(s=>s==='AI Jazeera'?'Al Jazeera':s)};
-  // Safety: never show all-zero drivers. If the live API returns sparse/empty data, keep baseline monitoring values.
-  if(!Array.isArray(merged.drivers) || merged.drivers.reduce((a,x)=>a+(Number(x[1])||0),0) <= 0){
-    merged.drivers = fallback.drivers;
-  }
-  if(!Array.isArray(merged.regions) || merged.regions.length === 0 || merged.regions.every(x=>(Number(x[1])||0)<=12)){
-    merged.regions = fallback.regions;
-  }
-  return merged;
+function clamp(n,min,max){ return Math.max(min, Math.min(max, Number(n)||0)); }
+function fmtTime(iso){
+  const d = iso ? new Date(iso) : new Date();
+  return d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit', timeZone:'Asia/Tokyo' }) + ' JST';
 }
+function stateFromScore(score){
+  if(score >= 70) return 'CRITICAL';
+  if(score >= 50) return 'HIGH';
+  if(score >= 30) return 'WATCH';
+  return 'STABLE';
+}
+function render(data){
+  currentData = data || fallback;
+  const score = clamp(currentData.score, 0, 100);
+  const prev = clamp(currentData.previousScore ?? score, 0, 100);
+  const diff = Math.round(score - prev);
+  const state = currentData.state || stateFromScore(score);
+  $('score').textContent = score;
+  $('state').textContent = state;
+  $('delta').textContent = `${diff >= 0 ? '▲ +' : '▼ '}${Math.abs(diff)} / 24H`;
+  $('updated').textContent = `UPDATED — ${fmtTime(currentData.updatedAt)}`;
+  $('lastSync').textContent = fmtTime(currentData.updatedAt);
+  $('brief').textContent = currentData.brief || fallback.brief;
+  $('assessment').textContent = currentData.assessment || fallback.assessment;
+  $('confidence').textContent = `${Math.round(currentData.confidence || 70)}%`;
+  $('confidenceBar').style.width = `${clamp(currentData.confidence || 70,0,100)}%`;
+  $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
+  $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
 
-async function getData(){ try{ const r=await fetch('/api/risk',{cache:'no-store'}); if(!r.ok) throw new Error('API'); return normalize(await r.json()); }catch(e){ return normalize(fallback); } }
-function getOverride(){ try{return JSON.parse(localStorage.getItem('oracle-admin-data')||'null')}catch(e){return null} }
-function effective(d){ return getOverride() || d; }
-function render(raw){ const d=normalize(effective(raw)); window.currentOracle=d;
-  el('score').textContent=d.score; el('state').textContent=d.state||level(d.score); el('delta').textContent=`▲ +${d.delta ?? 0} / 24H`; el('updated').textContent='UPDATED — '+fmtTime(); el('brief').textContent=d.brief;
-  el('confidence').textContent=d.confidence+'%'; el('modelConfidence').textContent=d.confidence+'%'; el('confidenceBar').style.width=d.confidence+'%'; el('assessment').textContent=d.assessment;
-  el('topSource').textContent=d.topEvent.source; el('topTitle').textContent=d.topEvent.title; el('topSummary').textContent=d.topEvent.summary; el('topLink').href=d.topEvent.url||'#';
-  el('drivers').innerHTML=d.drivers.map(x=>`<div class="driver"><span>${x[0]}</span><div><i style="width:${Math.min(100,x[1])}%"></i></div><strong>${x[1]}</strong></div>`).join('');
-  el('regions').innerHTML=d.regions.slice(0,5).map((x,i)=>`<div class="region"><div class="ranknum">${i+1}</div><div><div class="rankname">${x[0]}</div><div class="rankmeta">${x[2]} · ${x[3]}</div></div><div class="rankscore">${x[1]}</div><div class="rankbar"><i style="width:${Math.min(100,x[1])}%"></i></div></div>`).join('');
-  el('timeline').innerHTML=d.timeline.slice(0,4).map(x=>`<div class="timeline-row"><div class="time">${x[0]}</div><div>${x[1]}</div></div>`).join('');
-  el('sources').innerHTML=d.sources.map(s=>`<div class="source live-source">${s}</div>`).join('');
-  el('lastSync').textContent=fmtTime(); el('sourceHealth').textContent=(d.sourceHealth||96)+'%';
-  el('activeConflicts').textContent=d.metrics.activeConflicts; el('activeConflictsMeta').textContent=d.metrics.activeConflictsMeta;
-  el('milFlights').textContent=d.metrics.milFlights; el('milFlightsMeta').textContent=d.metrics.milFlightsMeta;
-  el('cyberStatus').textContent=d.metrics.cyberStatus; el('cyberStatusMeta').textContent=d.metrics.cyberStatusMeta;
-  el('logStatus').textContent=d.metrics.logStatus; el('logStatusMeta').textContent=d.metrics.logStatusMeta;
-  el('eventsAnalyzed').textContent=(d.metrics.eventsAnalyzed||0).toLocaleString(); el('countriesCount').textContent=d.metrics.countries||211;
-  buildCalc(d); fillAdmin(d);
+  const e = currentData.topEvent || fallback.topEvent;
+  $('eventSource').textContent = e.source || 'SOURCE';
+  $('eventTitle').textContent = e.title || 'Monitoring public signals';
+  $('eventSummary').textContent = e.summary || '';
+  $('eventLink').href = e.url || '#';
+
+  renderDrivers(currentData.drivers || fallback.drivers);
+  renderRegions(currentData.regions || fallback.regions);
+  renderTimeline(currentData.timeline || fallback.timeline);
+  renderMetrics(currentData.metrics || fallback.metrics);
+  renderCalc(currentData);
+  if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
+  lastLoadedAt = Date.now();
 }
-function buildCalc(d){ const rows=d.drivers.map(([name,val,w])=>[name,val,w,+(val*w).toFixed(1)]); const raw=+rows.reduce((a,r)=>a+r[3],0).toFixed(1); const adj=+(raw-d.score).toFixed(1);
-  el('calc').innerHTML=rows.map(r=>`<div class="calc-row"><span>${r[0]}</span><span>${r[1]}</span><span>×${r[2]}</span><b>${r[3]}</b></div>`).join('')+`<div class="calc-total"><span>Raw Score</span><b>${raw.toFixed(1)}</b></div><div class="calc-total"><span>AI Stability Adjustment</span><b>-${adj.toFixed(1)}</b></div><div class="calc-total"><span>FINAL SCORE</span><b>${d.score}</b></div>`; }
-async function refresh(){ render(await getData()); }
-el('whyBtn').onclick=()=>el('modal').classList.add('open'); el('whyBtn2').onclick=()=>el('modal').classList.add('open'); el('closeModal').onclick=()=>el('modal').classList.remove('open'); el('modal').onclick=e=>{ if(e.target.id==='modal') el('modal').classList.remove('open'); }; document.addEventListener('keydown',e=>{if(e.key==='Escape') el('modal').classList.remove('open')});
-function fillAdmin(d){ if(!document.body.classList.contains('admin-mode')) return; const set=(id,v)=>{if(el(id))el(id).value=v??''}; set('adminScore',d.score);set('adminState',d.state);set('adminDelta',d.delta);set('adminConfidence',d.confidence);set('adminBrief',d.brief);set('adminAssessment',d.assessment);set('adminTopTitle',d.topEvent.title);set('adminTopSource',d.topEvent.source);set('adminTopSummary',d.topEvent.summary);set('adminTopUrl',d.topEvent.url);set('adminRegions',d.regions.map(x=>x.join(' | ')).join('\n'));set('adminTimeline',d.timeline.map(x=>x.join(' | ')).join('\n')); }
-function readAdmin(){ const base=clone(window.currentOracle||fallback); const val=id=>el(id)?.value?.trim()||''; base.score=Number(val('adminScore')||base.score);base.state=val('adminState')||level(base.score);base.delta=Number(val('adminDelta')||0);base.confidence=Number(val('adminConfidence')||base.confidence);base.brief=val('adminBrief')||base.brief;base.assessment=val('adminAssessment')||base.assessment;base.topEvent={title:val('adminTopTitle')||base.topEvent.title,source:val('adminTopSource')||base.topEvent.source,summary:val('adminTopSummary')||base.topEvent.summary,url:val('adminTopUrl')||base.topEvent.url}; const rs=val('adminRegions').split('\n').map(l=>l.split('|').map(s=>s.trim())).filter(x=>x.length>=2); if(rs.length) base.regions=rs.map(x=>[x[0],Number(x[1])||0,x[2]||'Signal',x[3]||'→ 0']); const tl=val('adminTimeline').split('\n').map(l=>l.split('|').map(s=>s.trim())).filter(x=>x.length>=2); if(tl.length) base.timeline=tl.map(x=>[x[0],x.slice(1).join(' | ')]); return base; }
-function postText(d){ return `ORACLE REPORT\n\nGLOBAL RISK INDEX: ${d.score}/100\nSTATUS: ${d.state}\n24H: ▲ +${d.delta}\n\nTOP EVENT\n${d.topEvent.title}\n${d.topEvent.summary}\nSource: ${d.topEvent.source}\n\nHOT REGIONS\n${d.regions.slice(0,3).map((r,i)=>`${i+1}. ${r[0]} ${r[1]}`).join('\n')}\n\nAI ASSESSMENT\n${d.assessment}\n\nhttps://oracle-rho-flax.vercel.app\n#ORACLE #WorldRisk #WorldNews`; }
-function initAdmin(){ const p=new URLSearchParams(location.search); if(p.get('admin')!=='doom') return; document.body.classList.add('admin-mode'); el('adminClose').onclick=()=>document.body.classList.remove('admin-mode'); el('adminApply').onclick=()=>render(readAdmin()); el('adminSave').onclick=()=>{localStorage.setItem('oracle-admin-data',JSON.stringify(readAdmin())); el('adminOutput').value='Saved locally.'}; el('adminReset').onclick=()=>{localStorage.removeItem('oracle-admin-data'); location.href=location.pathname}; el('adminExport').onclick=()=>el('adminOutput').value=JSON.stringify(readAdmin(),null,2); el('adminCopyPost').onclick=async()=>{const t=postText(readAdmin()); el('adminOutput').value=t; try{await navigator.clipboard.writeText(t)}catch(e){}}; }
-initAdmin(); refresh(); setInterval(refresh,60000);
+function renderDrivers(drivers){
+  const entries = Object.entries(drivers);
+  $('drivers').innerHTML = entries.map(([k,v])=>`
+    <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
+  `).join('');
+}
+function renderRegions(regions){
+  $('regions').innerHTML = regions.slice(0,5).map((r,i)=>`
+    <div class="rank">
+      <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
+      <div><div class="rankname">${r.name}</div><div class="rankmeta">${r.trend || 'Watch'} ${r.change ? `• ${r.change}` : ''}</div></div>
+      <div class="rankscore">${Math.round(r.score)}</div>
+      <div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div>
+    </div>
+  `).join('');
+}
+function renderTimeline(timeline){
+  const list = (timeline || []).slice(0,5);
+  $('timelineCount').textContent = `${list.length} SIGNALS`;
+  $('timeline').innerHTML = list.map(t=>`<div class="timeline-row"><time>${t.time}</time><p>${t.text}</p></div>`).join('');
+}
+function renderMetrics(m){
+  $('metricConflicts').textContent = m.conflicts || '7';
+  $('metricConflictsSub').textContent = m.conflictsSub || 'MONITORED';
+  $('metricFlights').textContent = m.flights || 'WATCH';
+  $('metricFlightsSub').textContent = m.flightsSub || 'PUBLIC SIGNALS';
+  $('metricCyber').textContent = m.cyber || 'WATCH';
+  $('metricCyberSub').textContent = m.cyberSub || 'LOW SURGE';
+  $('metricLogistics').textContent = m.logistics || 'STABLE';
+  $('metricLogisticsSub').textContent = m.logisticsSub || 'CONTAINED';
+}
+function renderCalc(data){
+  const calc = data.calculation || {};
+  const weights = data.weights || { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
+  const drivers = data.drivers || fallback.drivers;
+  const lines = Object.entries(drivers).map(([k,v])=>({ name:k, value:v, weight:weights[k]||0, contribution:v*(weights[k]||0) }));
+  const raw = calc.raw ?? lines.reduce((s,l)=>s+l.contribution,0);
+  const containment = calc.containment ?? (data.containment ?? -4);
+  const final = calc.final ?? data.score;
+  $('rawScore').textContent = `RAW ${Math.round(raw*10)/10}`;
+  $('calcDetail').innerHTML = lines.map(l=>`
+    <div class="calc-line"><b>${l.name}</b><span>${Math.round(l.value)} × ${l.weight.toFixed(2)}</span><em>${l.contribution.toFixed(1)}</em></div>
+  `).join('') + `
+    <div class="calc-total"><span>RAW SCORE</span><strong>${raw.toFixed(1)}</strong></div>
+    <div class="calc-total"><span>STABILITY ADJUSTMENT</span><strong>${Number(containment).toFixed(1)}</strong></div>
+    <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
+  `;
+}
+async function loadRisk(){
+  try{
+    const res = await fetch('/api/risk?t=' + Date.now(), { cache:'no-store' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    render(data.ok ? data : fallback);
+  }catch(err){
+    console.warn('ORACLE fallback', err);
+    render({ ...fallback, updatedAt:new Date().toISOString(), aiMode:'FALLBACK' });
+  }
+}
+function generatePost(){
+  const d = currentData || fallback;
+  const event = d.topEvent || fallback.topEvent;
+  const regions = (d.regions || fallback.regions).slice(0,3).map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
+  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${d.score} ${d.state}\n\nTop Event\n${event.title}\n${event.summary}\n\nHot Regions\n${regions}\n\nAI Assessment\n${d.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n#ORACLE #WorldRisk #Geopolitics #GlobalRisk #AI`; 
+}
+function setup(){
+  const params = new URLSearchParams(location.search);
+  if(params.get('admin') === 'doom') $('adminPanel')?.classList.add('open');
+  $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
+  $('closeModal').addEventListener('click', ()=> $('scoreModal').classList.remove('open'));
+  $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
+  document.addEventListener('keydown', e=>{ if(e.key === 'Escape') $('scoreModal').classList.remove('open'); });
+  $('refreshBtn')?.addEventListener('click', loadRisk);
+  $('makePostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost());
+  $('copyPostBtn')?.addEventListener('click', async ()=>{ await navigator.clipboard.writeText($('postText').value || generatePost()); });
+  loadRisk();
+  setInterval(loadRisk, 60000);
+}
+setup();

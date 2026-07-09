@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ORACLE | World Risk Intelligence</title>
-  <meta name="description" content="ORACLE World Risk Intelligence Dashboard" />
+  <meta name="description" content="ORACLE monitors global risk through public data and AI-assisted analysis." />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -12,117 +12,97 @@
     <header class="topbar">
       <div>
         <div class="brand">ORACLE</div>
-        <div class="tagline">World Risk Intelligence</div>
+        <div class="tagline">WORLD RISK INTELLIGENCE</div>
       </div>
-      <div class="live"><span></span><b>LIVE</b></div>
+      <div class="live"><span></span><em>LIVE</em></div>
     </header>
 
     <section class="hero">
       <div class="hero-center">
         <div class="label">GLOBAL RISK INDEX</div>
-        <div class="score" id="score">38</div>
-        <button class="why-link" id="whyBtn" type="button">ⓘ WHY SCORE?</button>
-        <div class="state" id="state">WATCH</div>
-        <div class="delta" id="delta">▲ +2 / 24H</div>
-        <div class="updated" id="updated">UPDATED — --:-- JST</div>
+        <div class="score" id="score">--</div>
+        <div class="state" id="state">SYNCING</div>
+        <button class="why" id="whyBtn" type="button">ⓘ WHY SCORE?</button>
+        <div class="delta" id="delta">—</div>
+        <div class="updated" id="updated">UPDATED — WAITING</div>
       </div>
       <div class="rule"></div>
-      <p class="brief" id="brief">Regional tensions remain elevated. Global escalation risk remains contained.</p>
+      <p class="brief" id="brief">ORACLE is collecting public signals and preparing an assessment.</p>
     </section>
 
     <section class="grid">
-      <article class="card primary fade-in">
-        <div class="card-head"><span>AI ASSESSMENT</span><strong id="confidence">--%</strong></div>
-        <p id="assessment">Analyzing monitored public signals...</p>
+      <article class="card assessment reveal">
+        <div class="card-head"><b>AI ASSESSMENT</b><strong id="confidence">--%</strong></div>
+        <p id="assessment">Awaiting AI-assisted assessment.</p>
         <div class="confidence-bar"><i id="confidenceBar" style="width:0%"></i></div>
       </article>
 
-      <article class="card event fade-in">
-        <div class="card-head"><span>TOP EVENT</span><strong id="topSource">GDELT</strong></div>
-        <h2 id="topTitle">Monitoring global signal</h2>
-        <p id="topSummary">Latest event signal is being processed.</p>
-        <a id="topLink" href="https://www.gdeltproject.org/" target="_blank" rel="noopener">VIEW REPORT →</a>
+      <article class="card event reveal">
+        <div class="card-head"><b>TOP EVENT</b><span id="eventSource">SOURCE</span></div>
+        <h2 id="eventTitle">Monitoring public signals</h2>
+        <p id="eventSummary">No event loaded yet.</p>
+        <a id="eventLink" href="#" target="_blank" rel="noopener">VIEW REPORT →</a>
       </article>
+    </section>
 
-      <article class="card fade-in">
-        <div class="card-head"><span>RISK DRIVERS</span><button class="head-button" id="whyBtn2" type="button">WHY SCORE?</button></div>
+    <section class="grid">
+      <article class="card reveal">
+        <div class="card-head"><b>WHY SCORE?</b><span id="rawScore">RAW —</span></div>
         <div id="drivers"></div>
       </article>
 
-      <article class="card fade-in">
-        <div class="card-head"><span>HOT REGIONS</span><strong>TOP 5</strong></div>
+      <article class="card reveal">
+        <div class="card-head"><b>HOT REGIONS</b><span>AUTO RANKED</span></div>
         <div id="regions"></div>
       </article>
-
-      <article class="card fade-in">
-        <div class="card-head"><span>24H TIMELINE</span><strong>JST</strong></div>
-        <div id="timeline"></div>
-      </article>
-
-      <article class="card fade-in">
-        <div class="card-head"><span>DATA SOURCES</span><strong>MONITORED</strong></div>
-        <div class="sources-grid" id="sources"></div>
-        <div class="sync-grid">
-          <div><span>LAST SYNC</span><b id="lastSync">--:--:-- JST</b></div>
-          <div><span>AUTO REFRESH</span><b>60 SEC</b></div>
-          <div><span>SOURCE HEALTH</span><b id="sourceHealth">--%</b></div>
-        </div>
-      </article>
     </section>
 
-    <section class="mini-grid fade-in">
-      <article class="metric"><span>ACTIVE CONFLICTS</span><b id="activeConflicts">--</b><small id="activeConflictsMeta">MONITORED</small></article>
-      <article class="metric"><span>MILITARY FLIGHTS</span><b id="milFlights">Watch</b><small id="milFlightsMeta">EAST ASIA</small></article>
-      <article class="metric"><span>CYBER ALERTS</span><b id="cyberStatus">Watch</b><small id="cyberStatusMeta">NO GLOBAL SURGE</small></article>
-      <article class="metric"><span>LOGISTICS</span><b id="logStatus">Stable</b><small id="logStatusMeta">CONTAINED</small></article>
+    <section class="card reveal">
+      <div class="card-head"><b>24H TIMELINE</b><span id="timelineCount">0 SIGNALS</span></div>
+      <div id="timeline"></div>
     </section>
 
-    <section class="engine fade-in">
-      <div><span>ORACLE INTELLIGENCE ENGINE</span><b>AI Engine v2.0</b></div>
-      <div><span>EVENTS ANALYZED</span><b id="eventsAnalyzed">--</b></div>
-      <div><span>COUNTRIES</span><b id="countriesCount">211</b></div>
-      <div><span>MODEL CONFIDENCE</span><b id="modelConfidence">--%</b></div>
+    <section class="metrics reveal">
+      <div class="metric"><span>ACTIVE CONFLICTS</span><strong id="metricConflicts">--</strong><em id="metricConflictsSub">MONITORED</em></div>
+      <div class="metric"><span>MILITARY FLIGHTS</span><strong id="metricFlights">WATCH</strong><em id="metricFlightsSub">PUBLIC SIGNALS</em></div>
+      <div class="metric"><span>CYBER ALERTS</span><strong id="metricCyber">WATCH</strong><em id="metricCyberSub">LOW SURGE</em></div>
+      <div class="metric"><span>LOGISTICS</span><strong id="metricLogistics">STABLE</strong><em id="metricLogisticsSub">CONTAINED</em></div>
     </section>
 
-    <footer class="footer">
-      <p>Powered by ORACLE Intelligence Engine</p>
-      <p>Real-time monitoring of publicly available global events.</p>
-    </footer>
+    <section class="sources reveal">
+      <span>DATA SOURCES</span>
+      <b>GDELT <i></i></b><b>Reuters <i></i></b><b>AP <i></i></b><b>BBC <i></i></b><b>NHK <i></i></b><b>USGS <i></i></b><b>NASA <i></i></b><b>MarineTraffic <i></i></b><b>FlightRadar24 <i></i></b>
+    </section>
+
+    <section class="sync reveal">
+      <div><span>LAST SYNC</span><strong id="lastSync">--</strong></div>
+      <div><span>AUTO REFRESH</span><strong>60 SEC</strong></div>
+      <div><span>SOURCE HEALTH</span><strong id="sourceHealth">--%</strong></div>
+      <div><span>AI MODE</span><strong id="aiMode">RULE BASED</strong></div>
+    </section>
+
+    <section class="admin" id="adminPanel">
+      <div class="card-head"><b>ADMIN TERMINAL</b><span>PRIVATE MODE</span></div>
+      <div class="admin-buttons">
+        <button id="refreshBtn">REFRESH NOW</button>
+        <button id="makePostBtn">GENERATE X POST</button>
+        <button id="copyPostBtn">COPY</button>
+      </div>
+      <textarea id="postText" rows="9" placeholder="Generated post will appear here."></textarea>
+      <pre id="debugBox"></pre>
+    </section>
+
+    <footer class="footer">Powered by ORACLE Intelligence Engine. Public signals are used for situational awareness, not predictions.</footer>
   </main>
 
-  <div class="modal" id="modal" aria-hidden="true">
-    <div class="modal-card">
-      <button id="closeModal" class="close" type="button">×</button>
+  <div class="modal" id="scoreModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button class="close" id="closeModal" type="button">×</button>
       <h3>HOW WE CALCULATE</h3>
-      <p class="modal-note">The score is generated from public signals, weighted risk drivers, and an AI stability adjustment.</p>
-      <div id="calc"></div>
-      <p class="disclaimer">Situational awareness only. This is not a prediction or emergency alert.</p>
+      <div id="calcDetail"></div>
+      <p class="modal-note">Scores are generated from public signals and AI-assisted analysis. They are designed for situational awareness, not forecasts.</p>
     </div>
   </div>
-
-  <aside class="admin-panel" id="adminPanel">
-    <div class="admin-head"><b>ORACLE ADMIN TERMINAL</b><button id="adminClose" type="button">×</button></div>
-    <div class="admin-grid">
-      <label>Score<input id="adminScore" type="number" min="0" max="100"></label>
-      <label>Status<input id="adminState"></label>
-      <label>Delta<input id="adminDelta" type="number"></label>
-      <label>Confidence<input id="adminConfidence" type="number" min="0" max="100"></label>
-    </div>
-    <label>Brief<textarea id="adminBrief" rows="2"></textarea></label>
-    <label>AI Assessment<textarea id="adminAssessment" rows="4"></textarea></label>
-    <div class="admin-grid">
-      <label>Top Title<input id="adminTopTitle"></label>
-      <label>Top Source<input id="adminTopSource"></label>
-    </div>
-    <label>Top Summary<textarea id="adminTopSummary" rows="3"></textarea></label>
-    <label>Top URL<input id="adminTopUrl"></label>
-    <label>Hot Regions<textarea id="adminRegions" rows="6" placeholder="Ukraine | 55 | Military | ▲ +1"></textarea></label>
-    <label>Timeline<textarea id="adminTimeline" rows="5" placeholder="14:20 | Signal text"></textarea></label>
-    <div class="admin-actions">
-      <button id="adminApply">Preview</button><button id="adminSave">Save Local</button><button id="adminCopyPost">Generate Post</button><button id="adminExport">Export JSON</button><button id="adminReset">Reset</button>
-    </div>
-    <textarea id="adminOutput" rows="8" placeholder="Output"></textarea>
-  </aside>
 
   <script src="app.js"></script>
 </body>
