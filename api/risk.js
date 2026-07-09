@@ -152,8 +152,33 @@ async function aiAssessment(analyzed, articles, source){
   }
 
   try{
-    const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n');
-    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze only the supplied public headlines and calculated signals. Return strict JSON only with keys: assessment, brief, topSummary, scoreReason, xPost. No markdown. Keep tone calm, concise, non-alarmist.\n\nSource mode: ${source?.sourceMode || 'unknown'}\nSource error: ${source?.sourceError || 'none'}\nGlobal score: ${analyzed.final}\nDrivers: ${JSON.stringify(analyzed.drivers)}\nRegions: ${JSON.stringify(analyzed.regions)}\nCalculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}\nHeadlines:\n${headlines}`;
+    const headlines = articles.slice(0,24).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n');
+    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze only the supplied public headlines and calculated signals. Do not invent facts. Return strict compact JSON only. No markdown.
+
+Required JSON keys:
+- assessment: 2 concise sentences explaining the current global risk posture.
+- brief: 1 concise sentence for the hero area.
+- scoreReason: 2-4 concise sentences explaining why the score is at this level, referring to the driver categories and synchronization/containment.
+- topEventIndex: integer from 1 to the supplied headline list, selecting the most globally relevant item.
+- topEventTitle: short neutral title based on the selected headline.
+- topSummary: 1-2 concise sentences explaining the selected event's relevance.
+- outlook24h: one of STABLE, WATCH, ELEVATED, COOLING.
+- riskBias: one of RISING, FLAT, FALLING.
+- scoreAdjustment: integer from -4 to 4. Use this only for AI judgement over the rule score; be conservative.
+- keyDrivers: array of exactly 3 short strings naming the strongest current risk drivers.
+- watchItems: array of exactly 3 short strings naming what to monitor next.
+- xPost: concise English X post under 650 characters.
+
+Tone: calm, analytical, non-alarmist. Avoid prophecy, certainty, or sensational claims.
+
+Source mode: ${source?.sourceMode || 'unknown'}
+Source error: ${source?.sourceError || 'none'}
+Rule score: ${analyzed.final}
+Drivers: ${JSON.stringify(analyzed.drivers)}
+Regions: ${JSON.stringify(analyzed.regions)}
+Calculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}
+Headlines:
+${headlines}`;
 
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method:'POST',
@@ -162,11 +187,11 @@ async function aiAssessment(analyzed, articles, source){
         model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         response_format: { type:'json_object' },
         messages:[
-          { role:'system', content:'You output valid compact JSON only.' },
+          { role:'system', content:'You output valid compact JSON only. You are cautious, neutral, and do not exaggerate.' },
           { role:'user', content: prompt }
         ],
-        temperature:0.25,
-        max_tokens:700
+        temperature:0.18,
+        max_tokens:950
       })
     });
 
@@ -182,7 +207,7 @@ async function aiAssessment(analyzed, articles, source){
     const text = j.choices?.[0]?.message?.content || '';
     try{
       const parsed = JSON.parse(text);
-      return { ...parsed, debug:{ stage:'openai_ok', status:r.status, model:j.model || process.env.OPENAI_MODEL || 'gpt-4.1-mini' } };
+      return normalizeAi(parsed, j.model || process.env.OPENAI_MODEL || 'gpt-4.1-mini');
     }catch(parseGenerated){
       return { error:'openai generated invalid json', debug:{ stage:'model_json_parse', message:parseGenerated?.message || 'invalid_json', raw:text.slice(0,500) } };
     }
@@ -191,17 +216,52 @@ async function aiAssessment(analyzed, articles, source){
   }
 }
 
+function normalizeAi(ai, model){
+  const pick = (value, fallback='') => clean(String(value || fallback)).slice(0,900);
+  const arr3 = (value, fallback) => Array.isArray(value) ? value.map(v=>clean(String(v))).filter(Boolean).slice(0,3) : fallback;
+  const outlook = ['STABLE','WATCH','ELEVATED','COOLING'].includes(String(ai.outlook24h || '').toUpperCase()) ? String(ai.outlook24h).toUpperCase() : 'WATCH';
+  const bias = ['RISING','FLAT','FALLING'].includes(String(ai.riskBias || '').toUpperCase()) ? String(ai.riskBias).toUpperCase() : 'FLAT';
+  const adj = clamp(Math.round(Number(ai.scoreAdjustment || 0)), -4, 4);
+  return {
+    assessment: pick(ai.assessment, 'AI analysis completed. Current signals remain regionally concentrated.'),
+    brief: pick(ai.brief, 'AI analysis is active. Global risk remains monitored through public signals.'),
+    scoreReason: pick(ai.scoreReason, 'The score reflects weighted public signals and AI review of synchronization and containment.'),
+    topEventIndex: clamp(Math.round(Number(ai.topEventIndex || 1)), 1, 24),
+    topEventTitle: pick(ai.topEventTitle, ''),
+    topSummary: pick(ai.topSummary, 'This event is the strongest current public signal.'),
+    outlook24h: outlook,
+    riskBias: bias,
+    scoreAdjustment: adj,
+    keyDrivers: arr3(ai.keyDrivers, ['Military pressure','Diplomatic friction','Regional concentration']),
+    watchItems: arr3(ai.watchItems, ['Ukraine','Taiwan Strait','Middle East']),
+    xPost: pick(ai.xPost, ''),
+    debug:{ stage:'openai_ok', model }
+  };
+}
+
 function buildPayload(analyzed, articles, llm, source){
-  const score = analyzed.final;
-  const state = stateFromScore(score);
-  const top = analyzed.top || { title:'Public signals under monitoring', source:'GDELT', url:'https://www.gdeltproject.org/' };
-  const topRegion = analyzed.regions[0]?.name || 'Global';
-  const timeline = articles.slice(0,5).map((a,i)=>({ time: i===0?'NOW':`-${(i+1)*12}M`, text: `${a.source}: ${a.title.slice(0,115)}` }));
   const aiOk = Boolean(llm && !llm.error);
+  const aiAdjustment = aiOk ? clamp(Math.round(Number(llm.scoreAdjustment || 0)), -4, 4) : 0;
+  const score = clamp(Math.round(analyzed.final + aiAdjustment), 5, 92);
+  const state = stateFromScore(score);
+  const topRegion = analyzed.regions[0]?.name || 'Global';
+  const selectedIndex = aiOk ? clamp(Math.round(Number(llm.topEventIndex || 1)), 1, Math.max(articles.length,1)) - 1 : -1;
+  const selectedTop = selectedIndex >= 0 ? articles[selectedIndex] : null;
+  const top = selectedTop || analyzed.top || { title:'Public signals under monitoring', source:'GDELT', url:'https://www.gdeltproject.org/' };
+  const timelineBase = articles.slice(0,4).map((a,i)=>({ time: i===0?'NOW':`-${(i+1)*12}M`, text: `${a.source}: ${a.title.slice(0,115)}` }));
+  const timeline = aiOk ? [
+    { time:'AI', text:`24H OUTLOOK: ${llm.outlook24h} · BIAS: ${llm.riskBias}` },
+    ...timelineBase
+  ] : timelineBase;
+
+  const previousScore = clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0) - (aiOk && llm.riskBias === 'RISING' ? 1 : 0), 0, 100);
+  const sourceHealth = source?.sourceMode?.includes('LIVE') ? 96 : source?.sourceMode?.includes('CACHE') ? 88 : 82;
+  const confidence = clamp(analyzed.confidence + (aiOk ? 4 : 0) - (source?.sourceError ? 8 : 0), 55, 96);
 
   return {
     ok:true,
     mode:'live',
+    engineVersion:'ORACLE ENGINE v3.4',
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
     aiError: llm?.error || source?.sourceError || null,
@@ -210,23 +270,32 @@ function buildPayload(analyzed, articles, llm, source){
     sourceError: source?.sourceError || null,
     updatedAt:new Date().toISOString(),
     score,
-    previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
+    previousScore,
     state,
-    confidence: analyzed.confidence,
-    sourceHealth: articles.length > 10 ? 96 : 82,
+    confidence,
+    sourceHealth,
+    outlook24h: aiOk ? llm.outlook24h : 'WATCH',
+    riskBias: aiOk ? llm.riskBias : 'FLAT',
+    keyDrivers: aiOk ? llm.keyDrivers : ['Military pressure','Diplomatic friction','Regional concentration'],
+    watchItems: aiOk ? llm.watchItems : [topRegion,'Taiwan Strait','Middle East'],
     brief: aiOk ? llm.brief : `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`,
     assessment: aiOk ? llm.assessment : `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
     scoreReason: aiOk ? llm.scoreReason : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`,
     xPost: aiOk ? llm.xPost : null,
-    topEvent: { title: top.title, summary: aiOk ? llm.topSummary : `${topRegion} is currently the strongest contributor to the global risk index.`, source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
+    topEvent: {
+      title: aiOk && llm.topEventTitle ? llm.topEventTitle : top.title,
+      summary: aiOk ? llm.topSummary : `${topRegion} is currently the strongest contributor to the global risk index.`,
+      source: top.source || 'GDELT',
+      url: top.url || 'https://www.gdeltproject.org/'
+    },
     drivers: analyzed.drivers,
     weights: WEIGHTS,
-    calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), final: score },
+    calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), aiAdjustment, final: score, ruleFinal: analyzed.final },
     regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend })),
     timeline: timeline.length ? timeline : [{time:'NOW', text:'Monitoring active.'}],
     metrics:{
       conflicts: String(Math.max(7, analyzed.regions.filter(r=>r.score>35).length + 4)), conflictsSub:'+1 / 24H · MONITORED',
-      flights: analyzed.drivers.Military > 55 ? 'ELEVATED' : 'WATCH', flightsSub:'PUBLIC SIGNALS',
+      flights: analyzed.drivers.Military > 55 ? 'ELEVATED' : 'WATCH', flightsSub: aiOk ? `AI BIAS ${llm.riskBias}` : 'PUBLIC SIGNALS',
       cyber: analyzed.drivers.Cyber > 50 ? 'MEDIUM' : 'WATCH', cyberSub: analyzed.drivers.Cyber > 50 ? 'SURGE DETECTED' : 'LOW SURGE',
       logistics: analyzed.drivers.Logistics > 45 ? 'WATCH' : 'STABLE', logisticsSub: analyzed.drivers.Logistics > 45 ? 'PRESSURE' : 'CONTAINED'
     }
