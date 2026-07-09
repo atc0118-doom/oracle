@@ -9,6 +9,16 @@ const fallback = {
   previousScore: 25,
   state: 'WATCH',
   confidence: 74,
+  confidenceLabel: 'AI CONFIDENCE',
+  outlook24h: 'WATCH',
+  riskBias: 'FLAT',
+  keyDrivers: ['Military pressure','Diplomatic friction','Regional concentration'],
+  watchItems: ['Ukraine','Taiwan Strait','Middle East'],
+  reasoningLines: [
+    { label:'Military pressure', delta:4, explanation:'Military signals remain the largest weighted component.' },
+    { label:'Diplomatic friction', delta:2, explanation:'Diplomatic and geopolitical signals add secondary pressure.' },
+    { label:'Containment', delta:-3, explanation:'Signals remain regionally concentrated rather than globally synchronized.' }
+  ],
   updatedAt: new Date().toISOString(),
   sourceHealth: 88,
   aiMode: 'RULE BASED',
@@ -56,7 +66,7 @@ function render(data){
   $('lastSync').textContent = fmtTime(currentData.updatedAt);
   $('brief').textContent = currentData.brief || fallback.brief;
   $('assessment').textContent = currentData.assessment || fallback.assessment;
-  $('confidence').textContent = `${Math.round(currentData.confidence || 70)}%`;
+  $('confidence').textContent = `${currentData.confidenceLabel || 'AI CONFIDENCE'} ${Math.round(currentData.confidence || 70)}%`;
   $('confidenceBar').style.width = `${clamp(currentData.confidence || 70,0,100)}%`;
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
@@ -72,6 +82,7 @@ function render(data){
   renderTimeline(currentData.timeline || fallback.timeline);
   renderMetrics(currentData.metrics || fallback.metrics);
   renderCalc(currentData);
+  renderOutlook(currentData);
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
 }
@@ -133,6 +144,18 @@ function renderCalc(data){
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
     ${reason}${reasoning}${outlook}${driversNote}${watchNote}
   `;
+}
+
+function renderOutlook(data){
+  if(!$('outlookValue')) return;
+  const outlook = data.outlook24h || 'WATCH';
+  const bias = data.riskBias || 'FLAT';
+  const drivers = Array.isArray(data.keyDrivers) && data.keyDrivers.length ? data.keyDrivers : ['Military pressure','Diplomatic friction','Regional concentration'];
+  const watch = Array.isArray(data.watchItems) && data.watchItems.length ? data.watchItems : ['Ukraine','Taiwan Strait','Middle East'];
+  $('outlookValue').textContent = outlook;
+  $('outlookBias').textContent = `BIAS ${bias}`;
+  $('keyDriversList').innerHTML = drivers.slice(0,3).map(x=>`<li>${x}</li>`).join('');
+  $('watchNextList').innerHTML = watch.slice(0,3).map(x=>`<li>${x}</li>`).join('');
 }
 
 async function loadRisk(){

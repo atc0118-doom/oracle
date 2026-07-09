@@ -1,9 +1,11 @@
-# ORACLE v4.1 Reasoning Engine
+# ORACLE v4.2 Outlook Reasoning Engine
 
 Changes:
-- Adds AI Reasoning Engine lines inside WHY SCORE.
-- Adds a standing global-risk floor so ordinary monitoring does not collapse to unrealistically low scores.
-- Keeps the same design and product axis: score first, quiet UI, transparent rationale.
-- Updates engine label to ORACLE ENGINE v4.1 REASONING.
+- Visible 24H OUTLOOK panel
+- Visible KEY DRIVERS / WATCH NEXT panel
+- AI CONFIDENCE label clarified
+- WHY SCORE keeps AI reasoning lines and score calculation
+- AI suggestedScore is now actually used in final score blending
+- Normal-risk floor remains calibrated so ordinary monitored conditions do not appear as near-zero
 
-Deploy: upload all files and Redeploy on Vercel.
+Upload all files and redeploy on Vercel.
