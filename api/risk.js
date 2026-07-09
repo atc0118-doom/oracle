@@ -296,6 +296,10 @@ CRITICAL SAFETY / RELIABILITY RULES:
 - Avoid alarmist wording. ORACLE observes and assesses; it does not claim prophecy.
 - Keep statements source-bound and concise.
 - If a claim is not directly supported by a supplied headline, write about elevated tensions or monitored signals instead.
+- Never infer reactions, retaliation, effects, causality, investment impact, or strategic intent unless the supplied headline explicitly says so.
+- Do not merge two separate headlines into one causal claim.
+- Use phrases like "headlines report", "public headlines indicate", or "available reporting mentions" when describing specific events.
+- For FACTS, prefer neutral summaries over dramatic verbs. Avoid "intensifying", "responding aggressively", "driving", "triggering", or "proving" unless those exact ideas are present in supplied headlines.
 
 X post rules:
 - Always include the score and state.
@@ -339,31 +343,79 @@ ${headlines}`;
 }
 
 
+function isUnsupportedSpecific(text='', corpus=''){
+  const t = String(text || '').toLowerCase();
+  const c = String(corpus || '').toLowerCase();
+  const riskyPhrases = [
+    'responding aggressively',
+    'response aggressively',
+    'are intensifying',
+    'is intensifying',
+    'intensifying',
+    'affecting russian military investments',
+    'affecting military investments',
+    'drive heightened',
+    'drives heightened',
+    'has launched new strikes',
+    'launched new strikes',
+    'initiated new strikes',
+    'new strikes against iran',
+    'u.s. military strikes against iran',
+    'us military strikes against iran'
+  ];
+  if(riskyPhrases.some(p=>t.includes(p) && !c.includes(p))) return true;
+
+  // Specific strike/attack claims require the corpus to contain a close headline-level signal.
+  const claimsSpecificStrike = /\b(u\.s\.|us|united states|israel|iran|russia|ukraine|china)\b.{0,80}\b(strike|strikes|airstrike|airstrikes|attack|attacks|missile|missiles|launched|initiated)\b/i.test(text);
+  const corpusSpecificStrike = /\b(u\.s\.|us|united states|israel|iran|russia|ukraine|china)\b.{0,120}\b(strike|strikes|airstrike|airstrikes|attack|attacks|missile|missiles|launched|initiated)\b/i.test(corpus);
+  if(claimsSpecificStrike && !corpusSpecificStrike) return true;
+
+  // Causal language is frequently hallucinated; only allow if corpus also contains that framing.
+  const causal = /\b(caused|causing|triggered|triggering|drives|driving|forcing|forced|proves|retaliated|retaliation|responding aggressively|impacting|affecting)\b/i.test(text);
+  const causalInCorpus = /\b(caused|causing|triggered|triggering|drives|driving|forcing|forced|proves|retaliated|retaliation|responding aggressively|impacting|affecting)\b/i.test(corpus);
+  if(causal && !causalInCorpus) return true;
+
+  return false;
+}
+
+function conservativeSummary(topRegion='Global', score=0){
+  const state = score >= 50 ? 'elevated' : score >= 30 ? 'under watch' : 'stable';
+  return `Available public headlines indicate ${state} monitoring conditions, with ${topRegion} currently the main area of attention. Broader global escalation signals remain limited.`;
+}
+
 function reliabilityRewrite(text='', corpus=''){
   let out = String(text || '');
   const c = String(corpus || '').toLowerCase();
-
-  // If AI text contains high-risk specific claims not clearly supported by supplied headlines,
-  // soften them into source-bound regional monitoring language.
-  const unsupportedStrike = /\b(strike|strikes|airstrike|airstrikes|attack|attacks|missile|missiles)\b/i.test(out)
-    && !/\b(strike|strikes|airstrike|airstrikes|attack|attacks|missile|missiles)\b/i.test(c);
-  if(unsupportedStrike){
-    out = out.replace(/.*?(U\.S\.|US|United States).*?(Iran|Middle East).*?\.?$/i, 'Available public signals indicate elevated military and diplomatic activity involving the U.S. and Iran, with details subject to verification.');
-    out = out.replace(/.*?(Iran|Israel|Ukraine|Taiwan).*?(strike|attack|missile).*?\.?$/i, 'Available public signals indicate elevated regional tension, with specific military details subject to verification.');
-  }
 
   // Convert overly certain language into cautious intelligence language.
   out = out.replace(/\bconfirmed\b/gi, 'reported');
   out = out.replace(/\bproves\b/gi, 'indicates');
   out = out.replace(/\bwill\b/gi, 'may');
-  out = out.replace(/\bhas launched new strikes\b/gi, 'is linked in public reporting to possible military activity');
-  out = out.replace(/\blaunched new strikes\b/gi, 'is linked in public reporting to possible military activity');
+  out = out.replace(/\bhas launched new strikes\b/gi, 'is mentioned in public reporting in connection with possible military activity');
+  out = out.replace(/\blaunched new strikes\b/gi, 'is mentioned in public reporting in connection with possible military activity');
+  out = out.replace(/\bare intensifying\b/gi, 'remain under watch');
+  out = out.replace(/\bis intensifying\b/gi, 'remains under watch');
+  out = out.replace(/\bresponding aggressively\b/gi, 'also appearing in related public reporting');
+  out = out.replace(/\bdrives heightened\b/gi, 'coincides with elevated');
+  out = out.replace(/\bdrive heightened\b/gi, 'coincide with elevated');
+  out = out.replace(/\baffecting Russian military investments\b/gi, 'appearing in separate Ukraine-related reporting');
+
+  // If AI text contains high-risk specific claims not clearly supported by supplied headlines,
+  // soften them into source-bound regional monitoring language.
+  const unsupportedStrike = /\b(strike|strikes|airstrike|airstrikes|attack|attacks|missile|missiles)\b/i.test(out)
+    && !/\b(strike|strikes|airstrike|airstrikes|attack|attacks|missile|missiles)\b/i.test(c);
+  if(unsupportedStrike || isUnsupportedSpecific(out, corpus)){
+    out = out.replace(/.*?(U\.S\.|US|United States).*?(Iran|Middle East).*?\.?$/i, 'Available public reporting indicates elevated military and diplomatic activity involving the U.S. and Iran, with details subject to verification.');
+    out = out.replace(/.*?(Iran|Israel|Ukraine|Taiwan).*?(strike|attack|missile).*?\.?$/i, 'Available public signals indicate elevated regional tension, with specific military details subject to verification.');
+  }
+
   return out;
 }
 
 function safeIntelText(text='', fallback='Public signals remain under monitoring.', corpus=''){
   let out = reliabilityRewrite(String(text || ''), corpus).replace(/\s+/g,' ').trim();
   if(!out) return fallback;
+  if(isUnsupportedSpecific(out, corpus)) return fallback;
 
   // Keep ORACLE language source-bound. This is deliberately conservative:
   // it softens unsupported-sounding certainty without changing factual meaning.
@@ -446,17 +498,28 @@ function normalizeSourceConfidence(sc, articles, meta){
   };
 }
 function buildFacts(articles, llm, meta){
+  // FACTS are intentionally not free-form AI prose. They are source-bound observations
+  // generated directly from supplied article titles to prevent unsupported claims.
   const corpus = (articles||[]).map(a=>a.title).join(' ');
-  const aiFacts = Array.isArray(llm?.facts) ? llm.facts : [];
-  const facts = aiFacts.map(f=>safeIntelText(f,'', corpus)).filter(Boolean).slice(0,4);
-  if(facts.length) return facts;
-  const topArticles = (articles||[]).slice(0,3).map(a=>{
+  const out = [];
+  if(meta?.degraded) out.push('Source status: live public source retrieval is limited; cached or baseline signals may be used.');
+
+  const seen = new Set();
+  for(const a of (articles||[]).slice(0,10)){
     const src = a.source || 'Public source';
-    const title = safeIntelText(a.title || 'Public signal under monitoring.', '', corpus);
-    return `${src}: ${title}`;
-  });
-  if(meta?.degraded) topArticles.unshift('Source status: live public source retrieval is limited; cached or baseline signals may be used.');
-  return topArticles.length ? topArticles : ['Public signals are being monitored.'];
+    let title = safeIntelText(a.title || 'Public signal under monitoring.', 'Public signal under monitoring.', corpus);
+    title = title.replace(/\.$/,'');
+    const fact = `${src}: ${title}.`;
+    const key = fact.toLowerCase().replace(/[^a-z0-9]+/g,' ').slice(0,90);
+    if(!seen.has(key)){
+      seen.add(key);
+      out.push(fact);
+    }
+    if(out.length >= 4) break;
+  }
+
+  if(out.length) return out;
+  return ['Public signals are being monitored.'];
 }
 
 function buildReasoning(analyzed, topRegion){
@@ -499,8 +562,8 @@ function buildPayload(analyzed, articles, llm, meta={}){
     watchNext: aiOk ? safeList(llm.watchNext, topRegion, analyzed) : fallbackWatchNext(topRegion),
     sourceConfidence: aiOk ? normalizeSourceConfidence(llm.sourceConfidence, articles, meta) : normalizeSourceConfidence(null, articles, meta),
     verifiedSources: aiOk && Array.isArray(llm.verifiedSources) ? llm.verifiedSources.slice(0,8) : getVerifiedSources(articles),
-    brief: aiOk ? safeIntelText(llm.brief, `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`, corpus) : `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`,
-    assessment: aiOk ? safeIntelText(llm.assessment, `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`, corpus) : `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
+    brief: aiOk ? safeIntelText(llm.brief, conservativeSummary(topRegion, score), corpus) : conservativeSummary(topRegion, score),
+    assessment: aiOk ? safeIntelText(llm.assessment, `ORACLE assesses ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`, corpus) : `ORACLE assesses ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
     scoreReason: aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`, corpus) : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`,
     xPost: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null,
     xPostGlobal: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null,
