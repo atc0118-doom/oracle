@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ORACLE v5.1 | World Risk Intelligence</title>
-  <meta name="description" content="ORACLE monitors global risk through public data and AI-assisted analysis, with transparent scoring logic and near-term outlook." />
+  <title>ORACLE | World Risk Intelligence</title>
+  <meta name="description" content="ORACLE monitors global risk through public data and AI-assisted analysis." />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -49,7 +49,6 @@
       <article class="card reveal">
         <div class="card-head"><b>WHY SCORE?</b><span id="rawScore">RAW —</span></div>
         <div id="drivers"></div>
-        <div class="reasoning-preview" id="reasoningPreview"></div>
       </article>
 
       <article class="card reveal">
@@ -61,21 +60,6 @@
     <section class="card reveal">
       <div class="card-head"><b>24H TIMELINE</b><span id="timelineCount">0 SIGNALS</span></div>
       <div id="timeline"></div>
-    </section>
-
-    <section class="grid outlook-grid reveal">
-      <article class="card outlook-card">
-        <div class="card-head"><b>24H OUTLOOK</b><span id="outlookBias">BIAS FLAT</span></div>
-        <h2 id="outlookValue">WATCH</h2>
-        <p>AI-assisted near-term posture based on current public signals.</p>
-      </article>
-      <article class="card outlook-card">
-        <div class="card-head"><b>KEY DRIVERS</b><span>WATCH NEXT</span></div>
-        <div class="dual-list">
-          <div><strong>DRIVERS</strong><ul id="keyDriversList"><li>Military pressure</li></ul></div>
-          <div><strong>MONITOR</strong><ul id="watchNextList"><li>Ukraine</li></ul></div>
-        </div>
-      </article>
     </section>
 
     <section class="metrics reveal">
@@ -101,14 +85,15 @@
       <div class="card-head"><b>ADMIN TERMINAL</b><span>PRIVATE MODE</span></div>
       <div class="admin-buttons">
         <button id="refreshBtn">REFRESH NOW</button>
-        <button id="makePostBtn">GENERATE X POST</button>
+        <button id="makeGlobalPostBtn">GLOBAL POST</button>
+        <button id="makeJapanesePostBtn">JAPANESE POST</button>
         <button id="copyPostBtn">COPY</button>
       </div>
       <textarea id="postText" rows="9" placeholder="Generated post will appear here."></textarea>
       <pre id="debugBox"></pre>
     </section>
 
-    <footer class="footer">Powered by ORACLE Intelligence Engine v5.1. Public signals are used for situational awareness, not predictions.</footer>
+    <footer class="footer">Powered by ORACLE Intelligence Engine. Public signals are used for situational awareness, not predictions.</footer>
   </main>
 
   <div class="modal" id="scoreModal" aria-hidden="true">

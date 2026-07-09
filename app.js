@@ -9,16 +9,6 @@ const fallback = {
   previousScore: 25,
   state: 'WATCH',
   confidence: 74,
-  confidenceLabel: 'AI CONFIDENCE',
-  outlook24h: 'WATCH',
-  riskBias: 'FLAT',
-  keyDrivers: ['Military pressure','Diplomatic friction','Regional concentration'],
-  watchItems: ['Ukraine','Taiwan Strait','Middle East'],
-  reasoningLines: [
-    { label:'Military pressure', delta:4, explanation:'Military signals remain the largest weighted component.' },
-    { label:'Diplomatic friction', delta:2, explanation:'Diplomatic and geopolitical signals add secondary pressure.' },
-    { label:'Containment', delta:-3, explanation:'Signals remain regionally concentrated rather than globally synchronized.' }
-  ],
   updatedAt: new Date().toISOString(),
   sourceHealth: 88,
   aiMode: 'RULE BASED',
@@ -66,7 +56,7 @@ function render(data){
   $('lastSync').textContent = fmtTime(currentData.updatedAt);
   $('brief').textContent = currentData.brief || fallback.brief;
   $('assessment').textContent = currentData.assessment || fallback.assessment;
-  $('confidence').textContent = `${currentData.confidenceLabel || 'AI CONFIDENCE'} ${Math.round(currentData.confidence || 70)}%`;
+  $('confidence').textContent = `${Math.round(currentData.confidence || 70)}%`;
   $('confidenceBar').style.width = `${clamp(currentData.confidence || 70,0,100)}%`;
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
@@ -82,8 +72,6 @@ function render(data){
   renderTimeline(currentData.timeline || fallback.timeline);
   renderMetrics(currentData.metrics || fallback.metrics);
   renderCalc(currentData);
-  renderReasoningPreview(currentData);
-  renderOutlook(currentData);
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
 }
@@ -125,63 +113,19 @@ function renderCalc(data){
   const lines = Object.entries(drivers).map(([k,v])=>({ name:k, value:v, weight:weights[k]||0, contribution:v*(weights[k]||0) }));
   const raw = calc.raw ?? lines.reduce((s,l)=>s+l.contribution,0);
   const containment = calc.containment ?? (data.containment ?? -4);
-  const aiAdjustment = Number(calc.aiAdjustment || 0);
-  const ruleFinal = calc.ruleFinal ?? Math.round(raw + containment);
   const final = calc.final ?? data.score;
   $('rawScore').textContent = `RAW ${Math.round(raw*10)/10}`;
-  const aiLine = data.aiUsed ? `<div class="calc-total ai-calc"><span>AI JUDGEMENT</span><strong>${aiAdjustment >= 0 ? '+' : ''}${aiAdjustment.toFixed(1)}</strong></div>` : '';
-  const reason = data.scoreReason ? `<div class="calc-reason"><b>AI SCORE NOTE</b><p>${data.scoreReason}</p></div>` : '';
-  const reasoning = data.reasoningLines?.length ? `<div class="calc-reason"><b>AI REASONING ENGINE</b><div class="reason-lines">${data.reasoningLines.map(r=>`<div><span>${r.label}</span><strong>${Number(r.delta) >= 0 ? '+' : ''}${Math.round(Number(r.delta)||0)}</strong><p>${r.explanation}</p></div>`).join('')}</div></div>` : '';
-  const outlook = data.outlook24h ? `<div class="calc-reason compact"><b>24H OUTLOOK</b><p>${data.outlook24h} · ${data.riskBias || 'FLAT'}</p></div>` : '';
-  const driversNote = data.keyDrivers?.length ? `<div class="calc-reason compact"><b>KEY DRIVERS</b><p>${data.keyDrivers.join(' · ')}</p></div>` : '';
-  const watchNote = data.watchItems?.length ? `<div class="calc-reason compact"><b>WATCH NEXT</b><p>${data.watchItems.join(' · ')}</p></div>` : '';
   $('calcDetail').innerHTML = lines.map(l=>`
     <div class="calc-line"><b>${l.name}</b><span>${Math.round(l.value)} × ${l.weight.toFixed(2)}</span><em>${l.contribution.toFixed(1)}</em></div>
   `).join('') + `
     <div class="calc-total"><span>RAW SCORE</span><strong>${raw.toFixed(1)}</strong></div>
     <div class="calc-total"><span>STABILITY ADJUSTMENT</span><strong>${Number(containment).toFixed(1)}</strong></div>
-    ${aiLine}
-    <div class="calc-total"><span>RULE SCORE</span><strong>${Math.round(ruleFinal)}</strong></div>
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
-    ${reason}${reasoning}${outlook}${driversNote}${watchNote}
   `;
 }
-
-function renderReasoningPreview(data){
-  const el = $('reasoningPreview');
-  if(!el) return;
-  const lines = Array.isArray(data.reasoningLines) && data.reasoningLines.length ? data.reasoningLines : fallback.reasoningLines;
-  const scoreReason = data.scoreReason || 'Score reflects weighted public signals, AI judgement, and containment adjustments.';
-  el.innerHTML = `
-    <div class="reasoning-title"><span>AI REASONING</span><strong>${Math.round(data.score || 0)}</strong></div>
-    <div class="reasoning-mini-lines">
-      ${lines.slice(0,5).map(r=>`
-        <div class="reasoning-mini-line">
-          <span>${r.label || 'Signal'}</span>
-          <strong>${Number(r.delta) >= 0 ? '+' : ''}${Math.round(Number(r.delta)||0)}</strong>
-          <p>${r.explanation || ''}</p>
-        </div>
-      `).join('')}
-    </div>
-    <p class="reasoning-summary">${scoreReason}</p>
-  `;
-}
-
-function renderOutlook(data){
-  if(!$('outlookValue')) return;
-  const outlook = data.outlook24h || 'WATCH';
-  const bias = data.riskBias || 'FLAT';
-  const drivers = Array.isArray(data.keyDrivers) && data.keyDrivers.length ? data.keyDrivers : ['Military pressure','Diplomatic friction','Regional concentration'];
-  const watch = Array.isArray(data.watchItems) && data.watchItems.length ? data.watchItems : ['Ukraine','Taiwan Strait','Middle East'];
-  $('outlookValue').textContent = outlook;
-  $('outlookBias').textContent = `BIAS ${bias}`;
-  $('keyDriversList').innerHTML = drivers.slice(0,3).map(x=>`<li>${x}</li>`).join('');
-  $('watchNextList').innerHTML = watch.slice(0,3).map(x=>`<li>${x}</li>`).join('');
-}
-
 async function loadRisk(){
   try{
-    const res = await fetch('/api/risk', { cache:'default' });
+    const res = await fetch('/api/risk?t=' + Date.now(), { cache:'no-store' });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     render(data.ok ? data : fallback);
@@ -190,13 +134,74 @@ async function loadRisk(){
     render({ ...fallback, updatedAt:new Date().toISOString(), aiMode:'FALLBACK' });
   }
 }
-function generatePost(){
-  const d = currentData || fallback;
-  if(d.xPost) return `${d.xPost}\n\nhttps://oracle-rho-flax.vercel.app\n\n#ORACLE #WorldRisk #Geopolitics #GlobalRisk #AI`;
+function textPool(d){
   const event = d.topEvent || fallback.topEvent;
-  const regions = (d.regions || fallback.regions).slice(0,3).map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${d.score} ${d.state}\n24H Outlook: ${d.outlook24h || 'WATCH'}\n\nTop Event\n${event.title}\n${event.summary}\n\nHot Regions\n${regions}\n\nAI Assessment\n${d.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n#ORACLE #WorldRisk #Geopolitics #GlobalRisk #AI`; 
+  return [
+    event.title, event.summary, d.assessment, d.brief,
+    ...(d.regions || []).map(r=>r.name),
+    ...(d.keyDrivers || []), ...(d.watchItems || [])
+  ].join(' ').toLowerCase();
 }
+
+function uniqueTags(tags, limit=16){
+  const seen = new Set();
+  return tags
+    .filter(Boolean)
+    .map(t => t.startsWith('#') ? t : `#${t}`)
+    .filter(t => {
+      const key = t.toLowerCase();
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+function dynamicTags(d, lang='en'){
+  const t = textPool(d);
+  const baseGlobal = ['#ORACLE','#WorldRiskIndex','#GlobalRisk','#AIAnalysis','#OSINT'];
+  const baseJapanese = ['#ORACLE','#世界情勢','#国際情勢','#AI分析','#世界リスク'];
+  const topical = [];
+
+  if(/ukraine|kyiv|kiev|russia|nato/.test(t)) topical.push('#Ukraine','#Russia','#NATO');
+  if(/taiwan|taipei|strait|china|south china sea/.test(t)) topical.push('#Taiwan','#China','#SouthChinaSea');
+  if(/iran|israel|gaza|middle east|hezbollah|houthi|red sea/.test(t)) topical.push('#Iran','#Israel','#MiddleEast');
+  if(/cyber|hack|malware|ransomware|data breach|ddos/.test(t)) topical.push('#CyberSecurity','#CyberAttack');
+  if(/earthquake|volcano|tsunami|flood|wildfire|storm|hurricane|typhoon/.test(t)) topical.push('#Earthquake','#Disaster','#USGS');
+  if(/shipping|port|tanker|supply chain|logistics|vessel|canal/.test(t)) topical.push('#SupplyChain','#Logistics','#Maritime');
+  if(/oil|gas|market|inflation|stocks|bond|currency|finance/.test(t)) topical.push('#Markets','#Energy','#Finance');
+  if(/military|missile|drone|airstrike|troops|navy|air force|strike/.test(t)) topical.push('#Military','#Defense','#Geopolitics');
+
+  if(lang === 'ja'){
+    return uniqueTags([...baseJapanese, ...topical, '#地政学', '#危機管理'], 15);
+  }
+  return uniqueTags([...baseGlobal, ...topical, '#Geopolitics', '#Intelligence'], 16);
+}
+
+function generatePost(lang='en'){
+  const d = currentData || fallback;
+  const event = d.topEvent || fallback.topEvent;
+  const regions = (d.regions || fallback.regions).slice(0,3);
+  const tags = dynamicTags(d, lang).join(' ');
+  const score = d.score ?? fallback.score;
+  const state = d.state || stateFromScore(score);
+  const outlook = d.outlook24h ? `\n24H Outlook: ${d.outlook24h}` : '';
+
+  if(lang === 'ja'){
+    if(d.xPostJapanese && typeof d.xPostJapanese === 'string') return `${d.xPostJapanese.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
+    return `ORACLE | World Risk Intelligence\n\n世界リスク指数: ${score}（${state}）${outlook ? outlook.replace('24H Outlook:', '\n24時間見通し:') : ''}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+  }
+
+  const aiPost = d.xPostGlobal || d.xPost;
+  if(aiPost && typeof aiPost === 'string'){
+    return `${aiPost.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+  }
+
+  const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
+  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${score} (${state})${outlook}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`; 
+}
+
 function setup(){
   const params = new URLSearchParams(location.search);
   if(params.get('admin') === 'doom') $('adminPanel')?.classList.add('open');
@@ -205,8 +210,9 @@ function setup(){
   $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
   document.addEventListener('keydown', e=>{ if(e.key === 'Escape') $('scoreModal').classList.remove('open'); });
   $('refreshBtn')?.addEventListener('click', loadRisk);
-  $('makePostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost());
-  $('copyPostBtn')?.addEventListener('click', async ()=>{ await navigator.clipboard.writeText($('postText').value || generatePost()); });
+  $('makeGlobalPostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('en'));
+  $('makeJapanesePostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('ja'));
+  $('copyPostBtn')?.addEventListener('click', async ()=>{ await navigator.clipboard.writeText($('postText').value || generatePost('en')); });
   loadRisk();
   setInterval(loadRisk, 60000);
 }

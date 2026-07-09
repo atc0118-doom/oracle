@@ -1,25 +1,13 @@
-# ORACLE v5.1 Public Release
+# ORACLE | World Risk Intelligence
 
-Final public-ready build of ORACLE | World Risk Intelligence.
+AI-assisted global risk dashboard.
 
-## Core principles
-- Score first
-- Quiet interface
-- Explain the score
-- Public signals only
-- AI-assisted, non-predictive analysis
+## This build
+- Adds Global English X post generation.
+- Adds Japanese X post generation.
+- Adds dynamic hashtag selection based on current news, regions, drivers, and AI analysis.
+- Keeps English as the primary public UI.
+- Admin mode: https://oracle-rho-flax.vercel.app/?admin=doom
 
-## Included
-- OpenAI-assisted AI Assessment
-- Transparent WHY SCORE calculation
-- AI Reasoning Engine
-- 24H Outlook
-- Key Drivers / Watch Next
-- Hot Regions and Timeline
-- Admin terminal via `?admin=doom`
-- Conservative fallback when sources are limited
-
-## Required Vercel Environment Variable
-`OPENAI_API_KEY`
-
-Deploy by uploading all files and folders, including `api/` and `assets/`.
+## Deploy
+Upload all files to GitHub and redeploy on Vercel.
