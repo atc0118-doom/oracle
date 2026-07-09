@@ -10,6 +10,7 @@ const fallback = {
   state: 'WATCH',
   confidence: 74,
   evidenceStrength: 'LIMITED',
+  dataMode: 'fallback',
   updatedAt: new Date().toISOString(),
   sourceHealth: 88,
   aiMode: 'RULE BASED',
@@ -140,7 +141,12 @@ function renderEvidence(data){
   if($('evidenceChecks')) $('evidenceChecks').textContent = `${checks} CROSS CHECKS`;
   if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
   if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
-  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>';
+  if($('evidenceSourceList')) {
+    const mode = data.dataMode || ev.dataMode || 'live';
+    const factor = ev.factors ? `<small class="evidence-factors">Mode: ${escapeHtml(mode.toUpperCase())} · Diversity ${ev.factors.sourceDiversity}% · Freshness ${ev.factors.freshness}% · Completeness ${ev.factors.completeness}% · Agreement ${ev.factors.consensus}%</small>` : '';
+    const status = Array.isArray(ev.status) && ev.status.length ? `<small class="evidence-factors">${ev.status.slice(0,5).map(x=>`${escapeHtml(x.name)}:${escapeHtml(x.status)}`).join(' · ')}</small>` : '';
+    $('evidenceSourceList').innerHTML = (sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>') + factor + status;
+  }
 }
 
 function escapeHtml(str=''){
@@ -196,8 +202,8 @@ function renderScoreBridge(bridge){
   const stabilityDetails = Array.isArray(bridge.stabilityDetails) ? bridge.stabilityDetails : [];
   const formula = Array.isArray(bridge.formula) ? bridge.formula : [];
   const stabilityNote = stabilityDetails.length ? stabilityDetails.map(x=>`${x.label} ${Number(x.value)>=0?'+':''}${Number(x.value).toFixed(1)}`).join(' / ') : 'Primary driver and containment checks';
-  const duplicateNote = duplicate.note || 'Duplicate analysis unavailable';
-  const globalNote = global.reason || 'Cross-region synchronization analysis unavailable';
+  const duplicateNote = duplicate.note || 'Duplicate handling produced no reduction for this cycle.';
+  const globalNote = global.reason || 'Cross-region normalization based on active regional contributor distribution.';
   el.innerHTML = `
     <div class="bridge-main"><span>RAW</span><b>${raw.toFixed(1)}</b><em>→</em><span>INDEX</span><b>${Math.round(final)}</b></div>
     ${line('Stability adjustment', stability, stabilityNote)}
@@ -212,16 +218,19 @@ function renderScoreBridge(bridge){
 }
 
 function renderDrivers(drivers){
+  const evidence = currentData?.driverEvidence || {};
   const entries = Object.entries(drivers);
-  $('drivers').innerHTML = entries.map(([k,v])=>`
-    <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
-  `).join('');
+  $('drivers').innerHTML = entries.map(([k,v])=>{
+    const ev = evidence[k] || {};
+    const sub = ev.basis ? `<small>${escapeHtml(ev.basis)} · +${Number(ev.contribution||0).toFixed(1)} pts</small>` : `<small>Evidence score, not probability</small>`;
+    return `<div class="driver driver-evidence"><span>${k}${sub}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>`;
+  }).join('');
 }
 function renderRegions(regions){
   $('regions').innerHTML = regions.slice(0,5).map((r,i)=>`
     <div class="rank">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><div class="rankname">${r.name}</div><div class="rankmeta">${r.trend || 'Watch'} ${r.change ? `• ${r.change}` : ''}</div></div>
+      <div><div class="rankname">${r.name}</div><div class="rankmeta">Regional risk · ${r.trend || 'Watch'} ${r.change ? `• 24h ${r.change}` : ''}</div></div>
       <div class="rankscore">${Math.round(r.score)}</div>
       <div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div>
     </div>

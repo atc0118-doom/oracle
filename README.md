@@ -1,13 +1,12 @@
-# ORACLE v9.0 Scoring Core
+# ORACLE v13.0 Evidence Core
+
+Evidence-first reliability update.
 
 Changes:
-- Dynamic driver scoring from current article/category signals instead of fixed-looking template values.
-- TOP CONTRIBUTORS added so the global score shows which regions are actually driving the index.
-- SCORE BRIDGE added to explain Raw Score → Global Risk Index.
-- TOP EVENT summary is source-bound and tied to the selected article only.
-- 24H TIMELINE uses source time labels instead of fake minute offsets when timestamps are available.
-- AI Confidence wording replaced with Evidence Strength.
-- Reporting / Official / Data Feed separation retained.
+- Driver panels now show evidence score, signal count, source count, and contribution points.
+- Evidence includes data mode (LIVE / CACHE / BASELINE) plus diversity, freshness, completeness, and agreement factors.
+- Duplicate/noise and cross-region normalization no longer appear as unavailable placeholders.
+- Top event summary is source-bound and uses the detected region/category of the selected article.
+- Footer and product language updated to v13.0 Evidence Core.
 
-Deploy:
-Upload all files to GitHub and redeploy on Vercel.
+ORACLE provides situational awareness from public signals. It is not a prediction system.

@@ -22,3 +22,6 @@
 .formula-line span{font-weight:800;color:var(--text)}
 .formula-line strong{color:var(--gold);font-weight:900}
 .formula-line small{grid-column:1/-1;color:var(--muted);font-size:13px;line-height:1.45}
+
+/* ORACLE v13.0 Evidence Core */
+.driver-evidence span{display:flex;flex-direction:column;gap:3px}.driver-evidence small{font-size:9px;color:var(--muted);line-height:1.25;letter-spacing:.02em}.evidence-factors{display:block;margin-top:12px;color:var(--muted);font-size:10px;line-height:1.55;letter-spacing:.04em}
