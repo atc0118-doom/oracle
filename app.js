@@ -70,8 +70,9 @@ function render(data){
   renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
   renderVerifiedSources(currentData.verifiedSources || fallback.verifiedSources || []);
   renderEvidence(currentData);
-  $('confidence').textContent = `AI CONFIDENCE ${Math.round(currentData.confidence || 70)}%`;
-  $('confidenceBar').style.width = `${clamp(currentData.confidence || 70,0,100)}%`;
+  const strength = evidenceStrengthLabel(currentData);
+  $('confidence').textContent = `EVIDENCE STRENGTH ${strength}`;
+  $('confidenceBar').style.width = `${clamp(currentData.sourceHealth || currentData.confidence || 70,0,100)}%`;
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
 
@@ -107,12 +108,33 @@ function renderLists(id, items){
   const list = Array.isArray(items) ? items.slice(0,5) : [];
   el.innerHTML = list.map(x=>`<li>${escapeHtml(x)}</li>`).join('') || '<li>Monitoring public signals.</li>';
 }
+function evidenceStrengthLabel(data){
+  const ev = data.evidence || {};
+  if(ev.strength) return ev.strength;
+  const n = Number(ev.reliability || data.sourceHealth || data.confidence || 0);
+  if(n >= 88) return 'HIGH';
+  if(n >= 72) return 'MEDIUM';
+  return 'LIMITED';
+}
+
+function renderSourceGroups(groups={}){
+  const rows = [
+    ['REPORTING', groups.reporting || []],
+    ['OFFICIAL', groups.official || []],
+    ['DATA FEEDS', groups.data || []],
+    ['EVENT / AGGREGATION', [...(groups.event || []), ...(groups.aggregator || [])]],
+    ['OTHER', groups.other || []]
+  ].filter(([,items])=>Array.isArray(items) && items.length);
+  if(!rows.length) return '';
+  return `<div class="source-groups">${rows.map(([label,items])=>`<div><span>${label}</span><p>${items.slice(0,6).map(escapeHtml).join(' · ')}</p></div>`).join('')}</div>`;
+}
+
 function renderSourceConfidence(sc){
   const el = $('sourceConfidence');
   if(!el) return;
   const available = (sc.availableSources || []).slice(0,8).map(s=>`<b>${escapeHtml(s)}</b>`).join('');
   const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em>${escapeHtml(s)}</em>`).join('');
-  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
+  el.innerHTML = `${renderSourceGroups(sc.sourceGroups || {})}<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
 }
 
 function renderVerifiedSources(sources){
@@ -135,7 +157,7 @@ function renderEvidence(data){
   if($('evidenceChecks')) $('evidenceChecks').textContent = `${checks} CROSS CHECKS`;
   if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
   if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
-  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>';
+  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = `${renderSourceGroups(ev.sourceGroups || {})}<div>${sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>'}</div>`;
 }
 
 function escapeHtml(str=''){

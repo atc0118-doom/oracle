@@ -1,9 +1,12 @@
-# ORACLE v7.3 Reliability Release
+# ORACLE v8.0 Reliability Core
 
 Changes:
-- FACTS no longer repeat dramatic single-source headlines as confirmed truth
-- FACTS now show aggregated public reporting, source coverage, signal count, and status
-- Hero brief is source-bound and shorter for mobile
-- Evidence layer retained
-- Multi-source engine retained
-- AI assessment, outlook, X posts retained
+
+- Fixed TOP EVENT mismatch risk: title, summary, source and URL now stay bound to the same selected article.
+- Removed unsafe AI top-event merge behavior.
+- Separated source types: REPORTING, OFFICIAL, DATA FEEDS, EVENT / AGGREGATION.
+- Replaced AI-confidence framing with EVIDENCE STRENGTH.
+- FACTS no longer treat official statements as independent reporting.
+- Maintains multi-source engine, evidence panel, WHY SCORE, and Global/Japanese post generation.
+
+Deploy by uploading all files and redeploying on Vercel.
