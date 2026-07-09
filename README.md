@@ -1,10 +1,8 @@
-# ORACLE v6.2 Reliability Hotfix
+# ORACLE v7.1 Source-Bound AI Writer
 
-Fixes:
-- Resolves `reliabilityRewrite is not defined`.
-- Prevents `safeIntelText()` from referencing an undefined `corpus` variable.
-- Keeps FACTS / AI ASSESSMENT / 24H OUTLOOK / VERIFIED SOURCES structure.
-- Keeps cautious AI wording and source-bound reliability layer.
-
-Deploy:
-Upload all files and folders, then redeploy on Vercel.
+Changes:
+- Stricter AI writing rules
+- FACTS are source-bound, not free-form AI claims
+- Unsupported causal / military claims are softened
+- Multi-source engine maintained
+- Global/Japanese post generation maintained
