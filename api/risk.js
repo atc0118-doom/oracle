@@ -17,26 +17,52 @@ const CATEGORY_KEYWORDS = {
 };
 
 const WEIGHTS = { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
+const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null });
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=240');
 
   try{
-    const articles = await fetchGdelt();
+    const { articles, sourceError, degraded } = await loadArticles();
     const analyzed = analyzeArticles(articles);
-    const llm = await aiAssessment(analyzed, articles);
-    const payload = buildPayload(analyzed, articles, llm);
+    const llm = await aiAssessment(analyzed, articles, sourceError);
+    const payload = buildPayload(analyzed, articles, llm, { sourceError, degraded });
     res.status(200).json(payload);
   }catch(error){
     res.status(200).json(fallbackPayload(error?.message || 'unknown'));
   }
 }
 
+async function loadArticles(){
+  try{
+    const articles = await fetchGdelt();
+    if(articles.length){
+      ORACLE_CACHE.articles = articles;
+      ORACLE_CACHE.ts = Date.now();
+      ORACLE_CACHE.lastError = null;
+      return { articles, sourceError:null, degraded:false };
+    }
+  }catch(error){
+    const msg = error?.message || 'source_error';
+    ORACLE_CACHE.lastError = msg;
+    if(ORACLE_CACHE.articles?.length){
+      return { articles:ORACLE_CACHE.articles, sourceError:msg + ' · using cache', degraded:true };
+    }
+    return { articles:baselineArticles(msg), sourceError:msg + ' · using baseline signals', degraded:true };
+  }
+  return { articles:baselineArticles('empty source response'), sourceError:'empty source response · using baseline signals', degraded:true };
+}
+
 async function fetchGdelt(){
+  const now = Date.now();
+  if(ORACLE_CACHE.articles?.length && now - ORACLE_CACHE.ts < CACHE_TTL_MS){
+    return ORACLE_CACHE.articles;
+  }
   const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=75&sort=hybridrel&timespan=24h`;
-  const r = await fetch(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence' } });
+  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
+  const r = await fetch(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/5.2' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
   const j = await r.json();
   return (j.articles || []).map(a=>({
@@ -46,7 +72,19 @@ async function fetchGdelt(){
     domain: a.domain || '',
     seen: a.seendate || '',
     language: a.language || ''
-  })).filter(a=>a.title && a.url).slice(0,60);
+  })).filter(a=>a.title && a.url).slice(0,45);
+}
+
+function baselineArticles(reason='source degraded'){
+  const now = new Date().toISOString();
+  return [
+    { title:'Ukraine remains under active conflict monitoring as military signals continue', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/', domain:'oracle.local', seen:now, language:'English' },
+    { title:'Taiwan Strait remains under watch due to military and diplomatic signals', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/', domain:'oracle.local', seen:now, language:'English' },
+    { title:'Middle East tensions remain monitored with Iran Israel and Red Sea signals', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/', domain:'oracle.local', seen:now, language:'English' },
+    { title:'Cyber security alerts remain at watch level with no broad global surge', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/', domain:'oracle.local', seen:now, language:'English' },
+    { title:'Logistics and shipping pressure remains contained across monitored public sources', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/', domain:'oracle.local', seen:now, language:'English' },
+    { title:`Public source degradation detected: ${reason}`, source:'ORACLE System', url:'https://www.gdeltproject.org/', domain:'oracle.local', seen:now, language:'English' }
+  ];
 }
 
 function clean(s=''){ return String(s).replace(/\s+/g,' ').trim(); }
@@ -102,7 +140,7 @@ function pickTopEvent(articles, regions){
   return articles.find(a=>a.title.toLowerCase().includes(key)) || articles[0];
 }
 
-async function aiAssessment(analyzed, articles){
+async function aiAssessment(analyzed, articles, sourceError=null){
   const key = process.env.OPENAI_API_KEY;
   if(!key) return null;
 
@@ -113,7 +151,7 @@ async function aiAssessment(analyzed, articles){
 X post rules:
 - xPostGlobal: English post under 650 characters, world-facing tone.
 - xPostJapanese: Japanese post under 650 Japanese characters, calm and concise.
-- hashtags: array of 8 to 14 relevant English hashtags. Always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Add topical tags only when supported by supplied headlines, such as Ukraine, Russia, Taiwan, China, MiddleEast, Iran, Israel, CyberSecurity, Earthquake, Logistics, Energy, Geopolitics.\n\nGlobal score: ${analyzed.final}\nDrivers: ${JSON.stringify(analyzed.drivers)}\nRegions: ${JSON.stringify(analyzed.regions)}\nCalculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}\nHeadlines:\n${headlines}`;
+- hashtags: array of 8 to 14 relevant English hashtags. Always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Add topical tags only when supported by supplied headlines, such as Ukraine, Russia, Taiwan, China, MiddleEast, Iran, Israel, CyberSecurity, Earthquake, Logistics, Energy, Geopolitics.\n\nGlobal score: ${analyzed.final}\nDrivers: ${JSON.stringify(analyzed.drivers)}\nRegions: ${JSON.stringify(analyzed.regions)}\nCalculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}\nSource status: ${sourceError ? 'DEGRADED: '+sourceError : 'LIVE'}\nHeadlines:\n${headlines}`;
 
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method:'POST',
@@ -130,7 +168,11 @@ X post rules:
       })
     });
 
-    if(!r.ok) return { error:`openai ${r.status}` };
+    if(!r.ok){
+      let detail = '';
+      try{ const ej = await r.json(); detail = ej?.error?.message || JSON.stringify(ej).slice(0,220); }catch(_){ detail = await r.text().catch(()=> ''); }
+      return { error:`openai ${r.status}${detail ? ' · '+detail : ''}` };
+    }
     const j = await r.json();
     const text = j.choices?.[0]?.message?.content || '';
     return JSON.parse(text);
@@ -139,7 +181,7 @@ X post rules:
   }
 }
 
-function buildPayload(analyzed, articles, llm){
+function buildPayload(analyzed, articles, llm, meta={}){
   const score = analyzed.final;
   const state = stateFromScore(score);
   const top = analyzed.top || { title:'Public signals under monitoring', source:'GDELT', url:'https://www.gdeltproject.org/' };
@@ -149,16 +191,17 @@ function buildPayload(analyzed, articles, llm){
 
   return {
     ok:true,
-    mode:'live',
+    mode: meta.degraded ? 'degraded' : 'live',
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
     aiError: llm?.error || null,
+    sourceError: meta.sourceError || null,
     updatedAt:new Date().toISOString(),
     score,
     previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
     state,
     confidence: analyzed.confidence,
-    sourceHealth: articles.length > 10 ? 96 : 82,
+    sourceHealth: meta.degraded ? 72 : (articles.length > 10 ? 96 : 82),
     brief: aiOk ? llm.brief : `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`,
     assessment: aiOk ? llm.assessment : `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
     scoreReason: aiOk ? llm.scoreReason : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`,
