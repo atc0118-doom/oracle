@@ -97,7 +97,7 @@ async function fetchWithTimeout(url, options={}){
 }
 
 async function fetchGdelt(){
-  const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
+  const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
@@ -114,7 +114,7 @@ async function fetchGdelt(){
 }
 
 async function fetchGoogleNews(){
-  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China) when:1d');
+  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR shipping OR NATO OR Russia OR China) when:1d');
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('google_news ' + r.status);
@@ -125,7 +125,7 @@ async function fetchGoogleNews(){
 async function fetchGuardian(){
   const key = process.env.GUARDIAN_API_KEY;
   if(!key) return [];
-  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China');
+  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR shipping OR Russia OR China');
   const url = `https://content.guardianapis.com/search?q=${q}&section=world|technology|business|environment&show-fields=trailText&order-by=newest&page-size=20&api-key=${key}`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('guardian ' + r.status);
@@ -290,19 +290,30 @@ function analyzeArticles(articles){
   const maxRegionRaw = Math.max(1, ...Object.values(regionRaw));
   const regions = REGION_KEYWORDS.map(r=>{
     const raw = regionRaw[r.name] || 0;
-    const sourceBoost = Math.min(regionSources[r.name].size, 6) * 2;
+    const sources = regionSources[r.name].size;
+    if(raw <= 0 || sources <= 0){
+      return { name:r.name, score:0, change:'+0', trend:'No verified signal', count:0, raw:0, sources:0 };
+    }
+    const sourceBoost = Math.min(sources, 6) * 2;
     const score = clamp(Math.round(8 + (raw / maxRegionRaw) * 44 + drivers.Military*0.08 + drivers.Diplomatic*0.04 + sourceBoost), 8, 88);
-    return { name:r.name, score, change: raw>4?'+2':raw>0?'+1':'0', trend:raw>4?'Rising':raw>0?'Watch':'Stable', count:raw, raw:round1(raw), sources:regionSources[r.name].size };
+    return { name:r.name, score, change: raw>4?'+2':raw>0?'+1':'+0', trend:raw>4?'Rising':'Watch', count:raw, raw:round1(raw), sources };
   }).sort((a,b)=>b.score-a.score).slice(0,5);
 
   const regionTotal = Object.values(regionRaw).reduce((s,v)=>s+v,0) || 1;
-  const contributors = regions.map(r=>({
-    name:r.name,
-    share: clamp(Math.round(((regionRaw[r.name] || 0) / regionTotal) * 100), 0, 100),
-    impact: Math.round(r.score * 0.22),
-    score:r.score,
-    trend:r.trend
-  }));
+  const contributors = regions.map(r=>{
+    const signals = Number(r.raw || r.count || 0);
+    const sources = Number(r.sources || 0);
+    const hasEvidence = signals > 0 && sources > 0;
+    return {
+      name:r.name,
+      share: hasEvidence ? clamp(Math.round(((regionRaw[r.name] || 0) / regionTotal) * 100), 0, 100) : 0,
+      impact: hasEvidence ? Math.round(r.score * 0.22) : 0,
+      score: hasEvidence ? r.score : 0,
+      trend: hasEvidence ? r.trend : 'No verified signal',
+      signals: hasEvidence ? round1(signals) : 0,
+      sources: hasEvidence ? sources : 0
+    };
+  });
 
   const raw = Object.entries(drivers).reduce((sum,[k,v])=> sum + v*(WEIGHTS[k]||0), 0);
   const adjustment = stabilityAdjustment(drivers, regions, total, contributors);
@@ -758,7 +769,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
     drivers: analyzed.drivers,
     weights: WEIGHTS,
     calculation: { raw: round1(analyzed.raw), stability: round1(analyzed.adjustment), duplicateNoise: round1(analyzed.duplicateReduction), globalNormalization: round1(analyzed.globalNormalization), containment: round1(analyzed.adjustment + analyzed.duplicateReduction + analyzed.globalNormalization), final: score, reasoning: buildReasoning(analyzed, topRegion) },
-    regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend })),
+    regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend, signals:round1(r.raw || r.count || 0), sources:r.sources || 0 })),
     timeline: timeline.length ? timeline : [{time:'NOW', text:'Monitoring active.'}],
     metrics:{
       conflicts: String(Math.max(7, analyzed.regions.filter(r=>r.score>35).length + 4)), conflictsSub:'+1 / 24H · MONITORED',
