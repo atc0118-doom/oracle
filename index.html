@@ -37,7 +37,7 @@
       </article>
 
       <article class="card assessment reveal">
-        <div class="card-head"><b>AI ASSESSMENT</b><strong id="confidence">--%</strong></div>
+        <div class="card-head"><b>AI ASSESSMENT</b><strong id="confidence">AI CONFIDENCE --%</strong></div>
         <p id="assessment">Awaiting AI-assisted assessment.</p>
         <div class="confidence-bar"><i id="confidenceBar" style="width:0%"></i></div>
       </article>
@@ -85,9 +85,16 @@
         <div class="card-head"><b>SOURCE CONFIDENCE</b><span>VERIFICATION LAYER</span></div>
         <div id="sourceConfidence"></div>
       </article>
-      <article class="card reveal">
-        <div class="card-head"><b>VERIFIED SOURCES</b><span>USED IN RUN</span></div>
-        <div class="source-pillset verified" id="verifiedSources"></div>
+      <article class="card reveal evidence-card">
+        <div class="card-head"><b>EVIDENCE</b><span>PUBLIC SOURCES</span></div>
+        <div class="evidence-grid">
+          <div><span>SOURCES</span><strong id="evidenceSources">-- SOURCES</strong></div>
+          <div><span>AI CHECKS</span><strong id="evidenceChecks">-- CHECKS</strong></div>
+          <div><span>SIGNALS</span><strong id="evidenceArticles">-- SIGNALS</strong></div>
+          <div><span>RELIABILITY</span><strong id="evidenceReliability">--%</strong></div>
+        </div>
+        <div class="source-pillset verified" id="evidenceSourceList"></div>
+        <div class="source-pillset verified" id="verifiedSources" hidden></div>
       </article>
     </section>
 
@@ -127,7 +134,7 @@
       <pre id="debugBox"></pre>
     </section>
 
-    <footer class="footer">ORACLE Intelligence Engine v7.1 Source-Bound · Public signals are used for situational awareness, not predictions. Facts, AI assessment, outlook, and verified sources are separated for reliability.</footer>
+    <footer class="footer">ORACLE Intelligence Engine v7.2 Evidence Layer · Public signals are used for situational awareness, not predictions. Facts, AI assessment, outlook, and verified sources are separated for reliability.</footer>
   </main>
 
   <div class="modal" id="scoreModal" aria-hidden="true">

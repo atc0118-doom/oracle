@@ -1,8 +1,6 @@
-# ORACLE v7.1 Source-Bound AI Writer
+# ORACLE v7.2 Evidence Layer
 
-Changes:
-- Stricter AI writing rules
-- FACTS are source-bound, not free-form AI claims
-- Unsupported causal / military claims are softened
-- Multi-source engine maintained
-- Global/Japanese post generation maintained
+- Shorter mobile hero summary
+- Evidence panel with source count, signal count, AI checks, reliability
+- Source-bound AI writing strengthened
+- Multi-source engine retained

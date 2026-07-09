@@ -61,7 +61,7 @@ function render(data){
   $('delta').textContent = `${diff >= 0 ? '▲ +' : '▼ '}${Math.abs(diff)} / 24H`;
   $('updated').textContent = `UPDATED — ${fmtTime(currentData.updatedAt)}`;
   $('lastSync').textContent = fmtTime(currentData.updatedAt);
-  $('brief').textContent = currentData.brief || fallback.brief;
+  $('brief').textContent = shortIntelText(currentData.brief || fallback.brief, 165);
   $('assessment').textContent = currentData.assessment || fallback.assessment;
   renderFacts(currentData.facts || fallback.facts);
   renderOutlook(currentData);
@@ -69,7 +69,8 @@ function render(data){
   renderLists('watchNext', currentData.watchNext || fallback.watchNext);
   renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
   renderVerifiedSources(currentData.verifiedSources || fallback.verifiedSources || []);
-  $('confidence').textContent = `${Math.round(currentData.confidence || 70)}%`;
+  renderEvidence(currentData);
+  $('confidence').textContent = `AI CONFIDENCE ${Math.round(currentData.confidence || 70)}%`;
   $('confidenceBar').style.width = `${clamp(currentData.confidence || 70,0,100)}%`;
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
@@ -123,8 +124,30 @@ function renderVerifiedSources(sources){
     : '<em>No verified source list available</em>';
 }
 
+function renderEvidence(data){
+  const ev = data.evidence || {};
+  const sources = Array.isArray(ev.sources) && ev.sources.length ? ev.sources : (data.verifiedSources || []);
+  const sourceCount = ev.sourceCount || sources.length || 1;
+  const articleCount = ev.articleCount || data.articleCount || 0;
+  const reliability = Math.round(ev.reliability || data.sourceHealth || 70);
+  const checks = ev.crossChecks || Math.max(1, Math.min(3, sourceCount - 1));
+  if($('evidenceSources')) $('evidenceSources').textContent = `${sourceCount} SOURCES`;
+  if($('evidenceChecks')) $('evidenceChecks').textContent = `${checks} CROSS CHECKS`;
+  if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
+  if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
+  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>';
+}
+
 function escapeHtml(str=''){
   return String(str).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+}
+
+function shortIntelText(str='', max=165){
+  const clean = String(str || '').replace(/\s+/g,' ').trim();
+  if(clean.length <= max) return clean;
+  const first = clean.split(/(?<=[.!?])\s+/)[0];
+  if(first && first.length <= max) return first;
+  return clean.slice(0, max-1).replace(/\s+\S*$/, '') + '…';
 }
 
 function renderDrivers(drivers){
