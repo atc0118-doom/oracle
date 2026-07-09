@@ -20,3 +20,15 @@
 .dual-list li:first-child{border-top:0;padding-top:0}
 .ai-calc strong{color:var(--yellow)}
 @media(max-width:720px){.dual-list{grid-template-columns:1fr}.outlook-card h2{font-size:28px}}
+
+.reasoning-preview{margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,.075)}
+.reasoning-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.reasoning-title span{color:#9aa3ae;font-size:10px;letter-spacing:.22em}
+.reasoning-title strong{color:var(--yellow);font-size:13px;letter-spacing:.12em}
+.reasoning-mini-lines{display:grid;gap:8px}
+.reasoning-mini-line{display:grid;grid-template-columns:1fr 42px;gap:8px;padding:9px 0;border-top:1px solid rgba(255,255,255,.055)}
+.reasoning-mini-line:first-child{border-top:0}
+.reasoning-mini-line span{color:#e7ebf0;font-size:13px;font-weight:650}
+.reasoning-mini-line strong{text-align:right;color:var(--yellow);font-size:13px}
+.reasoning-mini-line p{grid-column:1/3;margin:0;color:#aeb6c0;font-size:12px;line-height:1.5}
+.reasoning-summary{margin:14px 0 0!important;color:#cfd4db!important;font-size:13px!important;line-height:1.65!important}

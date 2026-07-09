@@ -1,11 +1,25 @@
-# ORACLE v4.2 Outlook Reasoning Engine
+# ORACLE v5.1 Public Release
 
-Changes:
-- Visible 24H OUTLOOK panel
-- Visible KEY DRIVERS / WATCH NEXT panel
-- AI CONFIDENCE label clarified
-- WHY SCORE keeps AI reasoning lines and score calculation
-- AI suggestedScore is now actually used in final score blending
-- Normal-risk floor remains calibrated so ordinary monitored conditions do not appear as near-zero
+Final public-ready build of ORACLE | World Risk Intelligence.
 
-Upload all files and redeploy on Vercel.
+## Core principles
+- Score first
+- Quiet interface
+- Explain the score
+- Public signals only
+- AI-assisted, non-predictive analysis
+
+## Included
+- OpenAI-assisted AI Assessment
+- Transparent WHY SCORE calculation
+- AI Reasoning Engine
+- 24H Outlook
+- Key Drivers / Watch Next
+- Hot Regions and Timeline
+- Admin terminal via `?admin=doom`
+- Conservative fallback when sources are limited
+
+## Required Vercel Environment Variable
+`OPENAI_API_KEY`
+
+Deploy by uploading all files and folders, including `api/` and `assets/`.

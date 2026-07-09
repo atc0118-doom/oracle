@@ -82,6 +82,7 @@ function render(data){
   renderTimeline(currentData.timeline || fallback.timeline);
   renderMetrics(currentData.metrics || fallback.metrics);
   renderCalc(currentData);
+  renderReasoningPreview(currentData);
   renderOutlook(currentData);
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
@@ -143,6 +144,26 @@ function renderCalc(data){
     <div class="calc-total"><span>RULE SCORE</span><strong>${Math.round(ruleFinal)}</strong></div>
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
     ${reason}${reasoning}${outlook}${driversNote}${watchNote}
+  `;
+}
+
+function renderReasoningPreview(data){
+  const el = $('reasoningPreview');
+  if(!el) return;
+  const lines = Array.isArray(data.reasoningLines) && data.reasoningLines.length ? data.reasoningLines : fallback.reasoningLines;
+  const scoreReason = data.scoreReason || 'Score reflects weighted public signals, AI judgement, and containment adjustments.';
+  el.innerHTML = `
+    <div class="reasoning-title"><span>AI REASONING</span><strong>${Math.round(data.score || 0)}</strong></div>
+    <div class="reasoning-mini-lines">
+      ${lines.slice(0,5).map(r=>`
+        <div class="reasoning-mini-line">
+          <span>${r.label || 'Signal'}</span>
+          <strong>${Number(r.delta) >= 0 ? '+' : ''}${Math.round(Number(r.delta)||0)}</strong>
+          <p>${r.explanation || ''}</p>
+        </div>
+      `).join('')}
+    </div>
+    <p class="reasoning-summary">${scoreReason}</p>
   `;
 }
 
