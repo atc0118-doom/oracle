@@ -1,22 +1,14 @@
-# ORACLE | World Risk Intelligence
+# ORACLE v2.2 AI Live Enabled
 
-A silent world-risk intelligence terminal.
+OpenAI API を Vercel の Environment Variables に設定した状態で動く版です。
 
-## v2.1 AI Engine
+## 重要
+スクリーンショットにAPIキーが写った場合は、OpenAI側でそのキーを削除し、新しいキーに差し替えてください。
 
-- Public world-news signal ingestion via GDELT
-- Rule-based risk scoring
-- Optional LLM-assisted assessment via OpenAI API
-- Dynamic WHY SCORE? calculation
-- Auto-ranked hot regions
-- 60-second refresh
-- Hidden admin terminal: `?admin=doom`
+## Env
+- OPENAI_API_KEY
+- OPENAI_MODEL optional: gpt-4o-mini
 
-## Optional AI setup on Vercel
-
-Add Environment Variables:
-
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL` optional, default: `gpt-4.1-mini`
-
-If no API key is set, ORACLE uses rule-based analysis.
+## URL
+- Public: https://oracle-rho-flax.vercel.app
+- Admin: https://oracle-rho-flax.vercel.app/?admin=doom
