@@ -119,6 +119,7 @@ function renderCalc(data){
   $('rawScore').textContent = `RAW ${Math.round(raw*10)/10}`;
   const aiLine = data.aiUsed ? `<div class="calc-total ai-calc"><span>AI JUDGEMENT</span><strong>${aiAdjustment >= 0 ? '+' : ''}${aiAdjustment.toFixed(1)}</strong></div>` : '';
   const reason = data.scoreReason ? `<div class="calc-reason"><b>AI SCORE NOTE</b><p>${data.scoreReason}</p></div>` : '';
+  const reasoning = data.reasoningLines?.length ? `<div class="calc-reason"><b>AI REASONING ENGINE</b><div class="reason-lines">${data.reasoningLines.map(r=>`<div><span>${r.label}</span><strong>${Number(r.delta) >= 0 ? '+' : ''}${Math.round(Number(r.delta)||0)}</strong><p>${r.explanation}</p></div>`).join('')}</div></div>` : '';
   const outlook = data.outlook24h ? `<div class="calc-reason compact"><b>24H OUTLOOK</b><p>${data.outlook24h} · ${data.riskBias || 'FLAT'}</p></div>` : '';
   const driversNote = data.keyDrivers?.length ? `<div class="calc-reason compact"><b>KEY DRIVERS</b><p>${data.keyDrivers.join(' · ')}</p></div>` : '';
   const watchNote = data.watchItems?.length ? `<div class="calc-reason compact"><b>WATCH NEXT</b><p>${data.watchItems.join(' · ')}</p></div>` : '';
@@ -130,7 +131,7 @@ function renderCalc(data){
     ${aiLine}
     <div class="calc-total"><span>RULE SCORE</span><strong>${Math.round(ruleFinal)}</strong></div>
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
-    ${reason}${outlook}${driversNote}${watchNote}
+    ${reason}${reasoning}${outlook}${driversNote}${watchNote}
   `;
 }
 

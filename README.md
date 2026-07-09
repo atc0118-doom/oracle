@@ -1,17 +1,9 @@
-# ORACLE v4.0 Intelligence Scoring Engine
+# ORACLE v4.1 Reasoning Engine
 
-This build keeps the existing UI and upgrades the scoring engine.
+Changes:
+- Adds AI Reasoning Engine lines inside WHY SCORE.
+- Adds a standing global-risk floor so ordinary monitoring does not collapse to unrealistically low scores.
+- Keeps the same design and product axis: score first, quiet UI, transparent rationale.
+- Updates engine label to ORACLE ENGINE v4.1 REASONING.
 
-## What's new
-- Stronger rule scoring for direct military escalation signals
-- Crisis-floor logic to prevent unrealistically low scores during major-state military events
-- AI independent suggested score support
-- AI score adjustment range expanded conservatively
-- WHY SCORE includes AI judgement and crisis floor details
-- Engine version: ORACLE ENGINE v4.0
-
-## Deploy
-Upload all files to GitHub and redeploy on Vercel.
-
-Environment variable required for AI mode:
-- OPENAI_API_KEY
+Deploy: upload all files and Redeploy on Vercel.
