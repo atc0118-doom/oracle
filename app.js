@@ -9,6 +9,7 @@ const fallback = {
   previousScore: 25,
   state: 'WATCH',
   confidence: 74,
+  evidenceStrength: 'LIMITED',
   updatedAt: new Date().toISOString(),
   sourceHealth: 88,
   aiMode: 'RULE BASED',
@@ -21,7 +22,9 @@ const fallback = {
   watchNext: ['Verified escalation signals','Major diplomatic statements','Cyber or logistics spillover'],
   sourceConfidence: { availableSources:['GDELT'], limitedSources:[], note:'Public sources are monitored for situational awareness.' },
   verifiedSources: ['GDELT'],
-  topEvent: { title: 'Global signals under monitoring', summary: 'Public signals indicate localized pressure across monitored regions.', source: 'GDELT', url: 'https://www.gdeltproject.org/' },
+  topEvent: { title: 'Global signals under monitoring', summary: 'Public signals are monitored as source-bound risk inputs.', source: 'GDELT', url: 'https://www.gdeltproject.org/' },
+  contributors: [{name:'Ukraine', share:38, impact:12, score:56, trend:'Watch'}, {name:'Middle East', share:31, impact:9, score:45, trend:'Watch'}, {name:'Taiwan Strait', share:18, impact:5, score:49, trend:'Watch'}],
+  scoreBridge: { raw:32.6, stability:-2, duplicateNoise:0, globalNormalization:-2.6, final:28, note:'Raw weighted drivers are adjusted for duplicate noise, regional concentration, and global synchronization.' },
   drivers: { Military: 42, Diplomatic: 32, Cyber: 18, Logistics: 12, Finance: 9, Disaster: 6 },
   calculation: { raw: 32.6, containment: -4.6, final: 28, lines: [] },
   regions: [
@@ -70,9 +73,10 @@ function render(data){
   renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
   renderVerifiedSources(currentData.verifiedSources || fallback.verifiedSources || []);
   renderEvidence(currentData);
-  const strength = evidenceStrengthLabel(currentData);
-  $('confidence').textContent = `EVIDENCE STRENGTH ${strength}`;
+  $('confidence').textContent = `EVIDENCE STRENGTH ${currentData.evidenceStrength || evidenceStrengthFromData(currentData)}`;
   $('confidenceBar').style.width = `${clamp(currentData.sourceHealth || currentData.confidence || 70,0,100)}%`;
+  renderContributors(currentData.contributors || fallback.contributors || []);
+  renderScoreBridge(currentData.scoreBridge || fallback.scoreBridge || {});
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
 
@@ -108,33 +112,12 @@ function renderLists(id, items){
   const list = Array.isArray(items) ? items.slice(0,5) : [];
   el.innerHTML = list.map(x=>`<li>${escapeHtml(x)}</li>`).join('') || '<li>Monitoring public signals.</li>';
 }
-function evidenceStrengthLabel(data){
-  const ev = data.evidence || {};
-  if(ev.strength) return ev.strength;
-  const n = Number(ev.reliability || data.sourceHealth || data.confidence || 0);
-  if(n >= 88) return 'HIGH';
-  if(n >= 72) return 'MEDIUM';
-  return 'LIMITED';
-}
-
-function renderSourceGroups(groups={}){
-  const rows = [
-    ['REPORTING', groups.reporting || []],
-    ['OFFICIAL', groups.official || []],
-    ['DATA FEEDS', groups.data || []],
-    ['EVENT / AGGREGATION', [...(groups.event || []), ...(groups.aggregator || [])]],
-    ['OTHER', groups.other || []]
-  ].filter(([,items])=>Array.isArray(items) && items.length);
-  if(!rows.length) return '';
-  return `<div class="source-groups">${rows.map(([label,items])=>`<div><span>${label}</span><p>${items.slice(0,6).map(escapeHtml).join(' · ')}</p></div>`).join('')}</div>`;
-}
-
 function renderSourceConfidence(sc){
   const el = $('sourceConfidence');
   if(!el) return;
   const available = (sc.availableSources || []).slice(0,8).map(s=>`<b>${escapeHtml(s)}</b>`).join('');
   const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em>${escapeHtml(s)}</em>`).join('');
-  el.innerHTML = `${renderSourceGroups(sc.sourceGroups || {})}<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
+  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
 }
 
 function renderVerifiedSources(sources){
@@ -157,7 +140,7 @@ function renderEvidence(data){
   if($('evidenceChecks')) $('evidenceChecks').textContent = `${checks} CROSS CHECKS`;
   if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
   if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
-  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = `${renderSourceGroups(ev.sourceGroups || {})}<div>${sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>'}</div>`;
+  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>';
 }
 
 function escapeHtml(str=''){
@@ -170,6 +153,47 @@ function shortIntelText(str='', max=165){
   const first = clean.split(/(?<=[.!?])\s+/)[0];
   if(first && first.length <= max) return first;
   return clean.slice(0, max-1).replace(/\s+\S*$/, '') + '…';
+}
+
+
+function evidenceStrengthFromData(data){
+  const r = Math.round(data.sourceHealth || 0);
+  const sc = data.evidence?.sourceCount || (data.verifiedSources || []).length || 0;
+  if(r >= 85 && sc >= 5) return 'HIGH';
+  if(r >= 70 && sc >= 3) return 'MODERATE';
+  return 'LIMITED';
+}
+
+function renderContributors(contributors){
+  const el = $('contributors');
+  if(!el) return;
+  const list = (contributors || []).slice(0,5);
+  el.innerHTML = list.map((c,i)=>`
+    <div class="contributor-row">
+      <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
+      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${Math.round(c.share || 0)}%</span></div>
+      <strong>+${Math.round(c.impact || 0)}</strong>
+      <div class="rankbar"><i style="width:${clamp(c.share || c.score || 0,0,100)}%"></i></div>
+    </div>
+  `).join('') || '<p>Contributor data is being calculated.</p>';
+}
+
+function renderScoreBridge(bridge){
+  const el = $('scoreBridge');
+  if(!el) return;
+  const raw = Number(bridge.raw ?? 0);
+  const stability = Number(bridge.stability ?? 0);
+  const duplicateNoise = Number(bridge.duplicateNoise ?? 0);
+  const globalNormalization = Number(bridge.globalNormalization ?? 0);
+  const final = Number(bridge.final ?? currentData?.score ?? 0);
+  const line = (label, val) => `<div class="bridge-line"><span>${label}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
+  el.innerHTML = `
+    <div class="bridge-main"><span>RAW</span><b>${raw.toFixed(1)}</b><em>→</em><span>INDEX</span><b>${Math.round(final)}</b></div>
+    ${line('Stability adjustment', stability)}
+    ${line('Duplicate / noise reduction', duplicateNoise)}
+    ${line('Global synchronization', globalNormalization)}
+    <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
+  `;
 }
 
 function renderDrivers(drivers){
@@ -209,14 +233,17 @@ function renderCalc(data){
   const drivers = data.drivers || fallback.drivers;
   const lines = Object.entries(drivers).map(([k,v])=>({ name:k, value:v, weight:weights[k]||0, contribution:v*(weights[k]||0) }));
   const raw = calc.raw ?? lines.reduce((s,l)=>s+l.contribution,0);
-  const containment = calc.containment ?? (data.containment ?? -4);
+  const containment = calc.containment ?? ((calc.stability || 0) + (calc.duplicateNoise || 0) + (calc.globalNormalization || 0));
   const final = calc.final ?? data.score;
   $('rawScore').textContent = `RAW ${Math.round(raw*10)/10}`;
   $('calcDetail').innerHTML = lines.map(l=>`
     <div class="calc-line"><b>${l.name}</b><span>${Math.round(l.value)} × ${l.weight.toFixed(2)}</span><em>${l.contribution.toFixed(1)}</em></div>
   `).join('') + `
     <div class="calc-total"><span>RAW SCORE</span><strong>${raw.toFixed(1)}</strong></div>
-    <div class="calc-total"><span>STABILITY ADJUSTMENT</span><strong>${Number(containment).toFixed(1)}</strong></div>
+    <div class="calc-total"><span>STABILITY ADJUSTMENT</span><strong>${Number(calc.stability || 0).toFixed(1)}</strong></div>
+    <div class="calc-total"><span>DUPLICATE / NOISE</span><strong>${Number(calc.duplicateNoise || 0).toFixed(1)}</strong></div>
+    <div class="calc-total"><span>GLOBAL SYNC</span><strong>${Number(calc.globalNormalization || 0).toFixed(1)}</strong></div>
+    <div class="calc-total"><span>TOTAL ADJUSTMENT</span><strong>${Number(containment).toFixed(1)}</strong></div>
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
     ${renderReasoning(calc.reasoning || [])}
   `;

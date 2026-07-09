@@ -1,12 +1,13 @@
-# ORACLE v8.0 Reliability Core
+# ORACLE v9.0 Scoring Core
 
 Changes:
+- Dynamic driver scoring from current article/category signals instead of fixed-looking template values.
+- TOP CONTRIBUTORS added so the global score shows which regions are actually driving the index.
+- SCORE BRIDGE added to explain Raw Score → Global Risk Index.
+- TOP EVENT summary is source-bound and tied to the selected article only.
+- 24H TIMELINE uses source time labels instead of fake minute offsets when timestamps are available.
+- AI Confidence wording replaced with Evidence Strength.
+- Reporting / Official / Data Feed separation retained.
 
-- Fixed TOP EVENT mismatch risk: title, summary, source and URL now stay bound to the same selected article.
-- Removed unsafe AI top-event merge behavior.
-- Separated source types: REPORTING, OFFICIAL, DATA FEEDS, EVENT / AGGREGATION.
-- Replaced AI-confidence framing with EVIDENCE STRENGTH.
-- FACTS no longer treat official statements as independent reporting.
-- Maintains multi-source engine, evidence panel, WHY SCORE, and Global/Japanese post generation.
-
-Deploy by uploading all files and redeploying on Vercel.
+Deploy:
+Upload all files to GitHub and redeploy on Vercel.
