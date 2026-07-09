@@ -159,6 +159,7 @@ Required keys:
 - keyDrivers: array of 3 to 5 short driver labels.
 - watchNext: array of 3 to 5 short items ORACLE should monitor next.
 - sourceConfidence: object with availableSources array, limitedSources array, note string.
+- verifiedSources: array of source names actually present in supplied headlines.
 - xPostGlobal: English post under 650 characters, world-facing tone, source-bound, cautious.
 - xPostJapanese: Japanese post under 650 Japanese characters, calm and concise, source-bound.
 - hashtags: array of 8 to 14 relevant English hashtags.
@@ -217,7 +218,7 @@ ${headlines}`;
 
 
 function safeIntelText(text='', fallback='Public signals remain under monitoring.'){
-  let out = String(text || '').replace(/\s+/g,' ').trim();
+  let out = reliabilityRewrite(String(text || ''), corpus).replace(/\s+/g,' ').trim();
   if(!out) return fallback;
 
   // Keep ORACLE language source-bound. This is deliberately conservative:
@@ -276,23 +277,37 @@ function fallbackWatchNext(topRegion){
     'Verified multi-source escalation signals'
   ];
 }
+function getVerifiedSources(articles){
+  const sources = [...new Set((articles||[]).map(a=>a.source).filter(Boolean))];
+  const baseline = ['Reuters','AP','BBC','NHK','Al Jazeera'];
+  const named = sources.filter(s=>baseline.includes(s));
+  const other = sources.filter(s=>!baseline.includes(s) && !/^ORACLE/.test(s)).slice(0,4);
+  return (named.length ? named : sources.filter(s=>!/^ORACLE/.test(s)).slice(0,5)).concat(other).filter((v,i,a)=>a.indexOf(v)===i).slice(0,8);
+}
+
 function normalizeSourceConfidence(sc, articles, meta){
   const sources = [...new Set((articles||[]).map(a=>a.source).filter(Boolean))].slice(0,8);
   const limited = meta?.degraded ? ['GDELT'] : [];
   return {
     availableSources: Array.isArray(sc?.availableSources) ? sc.availableSources.slice(0,8) : sources,
     limitedSources: Array.isArray(sc?.limitedSources) ? sc.limitedSources.slice(0,5) : limited,
-    note: safeIntelText(sc?.note || (meta?.degraded ? 'Some public sources are degraded; ORACLE is using cached or baseline signals.' : 'Public source coverage is currently available for monitored signals.'), 'Source confidence is being monitored.')
+    note: safeIntelText(sc?.note || (meta?.degraded ? 'Some public sources are degraded; ORACLE is using cached or baseline signals.' : 'Public source coverage is currently available for monitored signals.'), 'Source confidence is being monitored.', (articles||[]).map(a=>a.title).join(' '))
   };
 }
 function buildFacts(articles, llm, meta){
+  const corpus = (articles||[]).map(a=>a.title).join(' ');
   const aiFacts = Array.isArray(llm?.facts) ? llm.facts : [];
-  const facts = aiFacts.map(f=>safeIntelText(f,'')).filter(Boolean).slice(0,4);
+  const facts = aiFacts.map(f=>safeIntelText(f,'', corpus)).filter(Boolean).slice(0,4);
   if(facts.length) return facts;
-  const topArticles = (articles||[]).slice(0,3).map(a=>`${a.source}: ${a.title}`);
+  const topArticles = (articles||[]).slice(0,3).map(a=>{
+    const src = a.source || 'Public source';
+    const title = safeIntelText(a.title || 'Public signal under monitoring.', '', corpus);
+    return `${src}: ${title}`;
+  });
   if(meta?.degraded) topArticles.unshift('Source status: live public source retrieval is limited; cached or baseline signals may be used.');
   return topArticles.length ? topArticles : ['Public signals are being monitored.'];
 }
+
 function buildReasoning(analyzed, topRegion){
   const d = analyzed.drivers || {};
   return [
@@ -311,6 +326,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
   const topRegion = analyzed.regions[0]?.name || 'Global';
   const timeline = articles.slice(0,5).map((a,i)=>({ time: i===0?'NOW':`-${(i+1)*12}M`, text: `${a.source}: ${a.title.slice(0,115)}` }));
   const aiOk = Boolean(llm && !llm.error);
+  const corpus = (articles||[]).map(a=>a.title).join(' ');
 
   return {
     ok:true,
@@ -327,18 +343,19 @@ function buildPayload(analyzed, articles, llm, meta={}){
     sourceHealth: meta.degraded ? 72 : (articles.length > 10 ? 96 : 82),
     facts: buildFacts(articles, llm, meta),
     outlook24h: aiOk ? normalizeOutlook(llm.outlook24h) : (score >= 50 ? 'WATCH' : 'STABLE'),
-    outlookText: aiOk ? safeIntelText(llm.outlookText, 'Available public signals suggest conditions should continue to be monitored over the next 24 hours.') : 'Available public signals suggest conditions should continue to be monitored over the next 24 hours.',
+    outlookText: aiOk ? safeIntelText(llm.outlookText, 'Available public signals suggest conditions should continue to be monitored over the next 24 hours.', corpus) : 'Available public signals suggest conditions should continue to be monitored over the next 24 hours.',
     keyDrivers: aiOk ? safeList(llm.keyDrivers, topRegion, analyzed) : fallbackDrivers(topRegion, analyzed),
     watchNext: aiOk ? safeList(llm.watchNext, topRegion, analyzed) : fallbackWatchNext(topRegion),
     sourceConfidence: aiOk ? normalizeSourceConfidence(llm.sourceConfidence, articles, meta) : normalizeSourceConfidence(null, articles, meta),
-    brief: aiOk ? safeIntelText(llm.brief, `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`) : `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`,
-    assessment: aiOk ? safeIntelText(llm.assessment, `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`) : `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
-    scoreReason: aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`) : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`,
-    xPost: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '') : null,
-    xPostGlobal: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '') : null,
-    xPostJapanese: aiOk ? safeIntelText(llm.xPostJapanese, '') : null,
+    verifiedSources: aiOk && Array.isArray(llm.verifiedSources) ? llm.verifiedSources.slice(0,8) : getVerifiedSources(articles),
+    brief: aiOk ? safeIntelText(llm.brief, `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`, corpus) : `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`,
+    assessment: aiOk ? safeIntelText(llm.assessment, `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`, corpus) : `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
+    scoreReason: aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`, corpus) : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`,
+    xPost: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null,
+    xPostGlobal: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null,
+    xPostJapanese: aiOk ? safeIntelText(llm.xPostJapanese, '', corpus) : null,
     hashtags: aiOk ? safeHashtags(llm.hashtags) : null,
-    topEvent: { title: top.title, summary: aiOk ? safeIntelText(llm.topSummary, `${topRegion} is currently the strongest contributor to the global risk index.`) : `${topRegion} is currently the strongest contributor to the global risk index.`, source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
+    topEvent: { title: top.title, summary: aiOk ? safeIntelText(llm.topSummary, `${topRegion} is currently the strongest contributor to the global risk index.`, corpus) : `${topRegion} is currently the strongest contributor to the global risk index.`, source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
     drivers: analyzed.drivers,
     weights: WEIGHTS,
     calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), final: score, reasoning: buildReasoning(analyzed, topRegion) },
@@ -368,6 +385,7 @@ function fallbackPayload(error){
     keyDrivers:['Baseline military monitoring','Limited source volume','Regional pressure only'],
     watchNext:['GDELT availability','Verified regional escalation signals','Major diplomatic or logistics changes'],
     sourceConfidence:{availableSources:['GDELT'],limitedSources:['GDELT'],note:'Live public source retrieval is degraded.'},
+    verifiedSources:['GDELT'],
     topEvent:{ title:'Public source monitoring active', summary:'No dominant global escalation signal is available from current public inputs.', source:'GDELT', url:'https://www.gdeltproject.org/' },
     drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28 },
     regions:[{name:'Ukraine',score:44,change:'+1',trend:'Watch'},{name:'Taiwan Strait',score:39,change:'0',trend:'Watch'},{name:'Middle East',score:37,change:'0',trend:'Stable'},{name:'South China Sea',score:31,change:'0',trend:'Stable'},{name:'Korea',score:25,change:'0',trend:'Stable'}],
