@@ -99,7 +99,7 @@ async function fetchWithTimeout(url, options={}){
 async function fetchGdelt(){
   const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
   const j = await r.json();
   return (j.articles || []).map(a=>({
@@ -116,7 +116,7 @@ async function fetchGdelt(){
 async function fetchGoogleNews(){
   const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China) when:1d');
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
   if(!r.ok) throw new Error('google_news ' + r.status);
   const xml = await r.text();
   return parseRss(xml, 'Google News').slice(0,25);
@@ -127,7 +127,7 @@ async function fetchGuardian(){
   if(!key) return [];
   const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China');
   const url = `https://content.guardianapis.com/search?q=${q}&section=world|technology|business|environment&show-fields=trailText&order-by=newest&page-size=20&api-key=${key}`;
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
   if(!r.ok) throw new Error('guardian ' + r.status);
   const j = await r.json();
   return (j.response?.results || []).map(a=>({
@@ -143,7 +143,7 @@ async function fetchGuardian(){
 
 async function fetchUSGS(){
   const url = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.geojson';
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
   if(!r.ok) throw new Error('usgs ' + r.status);
   const j = await r.json();
   return (j.features || []).slice(0,12).map(f=>({
@@ -159,7 +159,7 @@ async function fetchUSGS(){
 
 async function fetchNOAA(){
   const url = 'https://services.swpc.noaa.gov/products/alerts.json';
-  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.0' } });
+  const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/7.2' } });
   if(!r.ok) throw new Error('noaa ' + r.status);
   const j = await r.json();
   const rows = Array.isArray(j) ? j.slice(-10) : [];
@@ -271,9 +271,9 @@ async function aiAssessment(analyzed, articles, sourceError=null){
     const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze ONLY the supplied public headlines and calculated signals.
 Return strict JSON only. No markdown.
 Required keys:
-- facts: array of 2 to 4 short source-bound observations from the supplied headlines only.
+- facts: array of 2 to 4 short source-bound observations from the supplied headlines only. Prefer source + headline summaries, not analysis.
 - assessment: 1 to 2 sentence AI assessment, clearly separated from facts.
-- brief: 1 concise source-bound summary for the hero area.
+- brief: 1 concise source-bound summary for the hero area, maximum 120 characters, no more than one sentence.
 - topSummary: 1 sentence explanation of why the selected top event matters.
 - scoreReason: 1 sentence explaining the score using drivers and public signals.
 - outlook24h: one of STABLE, WATCH, ESCALATING, DE-ESCALATING.
@@ -300,6 +300,12 @@ CRITICAL SAFETY / RELIABILITY RULES:
 - Do not merge two separate headlines into one causal claim.
 - Use phrases like "headlines report", "public headlines indicate", or "available reporting mentions" when describing specific events.
 - For FACTS, prefer neutral summaries over dramatic verbs. Avoid "intensifying", "responding aggressively", "driving", "triggering", or "proving" unless those exact ideas are present in supplied headlines.
+
+
+- Keep the hero brief short enough for a mobile screen. Do not exceed 120 characters.
+- Do not combine U.S./Iran and Ukraine headlines into a single causal sentence.
+- Use neutral phrasing: "headlines mention", "public reporting references", "monitoring continues".
+- If evidence is mixed or source volume is limited, say so plainly.
 
 X post rules:
 - Always include the score and state.
@@ -533,6 +539,28 @@ function buildReasoning(analyzed, topRegion){
   ];
 }
 
+function buildEvidence(articles=[], meta={}, analyzed={}){
+  const sources = getVerifiedSources(articles);
+  const report = Array.isArray(meta?.sourceReport) ? meta.sourceReport : [];
+  const active = report.filter(r=>r.ok && r.count>0).map(r=>r.name);
+  const combined = [...new Set([...sources, ...active])].filter(Boolean).slice(0,10);
+  const sourceCount = combined.length || sources.length || 1;
+  const articleCount = articles.length || 0;
+  const crossChecks = Math.max(1, Math.min(4, sourceCount - 1));
+  const reliability = sourceHealthScore(articles, meta);
+  return { sourceCount, sources: combined.length ? combined : ['Public sources'], articleCount, crossChecks, reliability };
+}
+
+function conciseBrief(aiBrief='', articles=[], topRegion='Global', score=0){
+  const text = clean(aiBrief);
+  if(text && text.length <= 135 && !isUnsupportedSpecific(text, (articles||[]).map(a=>a.title).join(' '))) return text.replace(/\s+/g,' ');
+  const sources = getVerifiedSources(articles);
+  const main = topRegion || 'Global';
+  const state = score >= 50 ? 'elevated' : score >= 30 ? 'watch-level' : 'stable';
+  if(sources.length >= 3) return `Multiple public sources indicate ${state} monitoring conditions, led by ${main}.`;
+  return `Available public signals indicate ${state} monitoring conditions, led by ${main}.`;
+}
+
 function buildPayload(analyzed, articles, llm, meta={}){
   const score = analyzed.final;
   const state = stateFromScore(score);
@@ -562,7 +590,9 @@ function buildPayload(analyzed, articles, llm, meta={}){
     watchNext: aiOk ? safeList(llm.watchNext, topRegion, analyzed) : fallbackWatchNext(topRegion),
     sourceConfidence: aiOk ? normalizeSourceConfidence(llm.sourceConfidence, articles, meta) : normalizeSourceConfidence(null, articles, meta),
     verifiedSources: aiOk && Array.isArray(llm.verifiedSources) ? llm.verifiedSources.slice(0,8) : getVerifiedSources(articles),
-    brief: aiOk ? safeIntelText(llm.brief, conservativeSummary(topRegion, score), corpus) : conservativeSummary(topRegion, score),
+    evidence: buildEvidence(articles, meta, analyzed),
+    articleCount: articles.length,
+    brief: conciseBrief(aiOk ? safeIntelText(llm.brief, '', corpus) : '', articles, topRegion, score),
     assessment: aiOk ? safeIntelText(llm.assessment, `ORACLE assesses ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`, corpus) : `ORACLE assesses ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
     scoreReason: aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`, corpus) : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`,
     xPost: aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null,
@@ -608,7 +638,7 @@ function fallbackPayload(error){
     keyDrivers:['Baseline military monitoring','Limited source volume','Regional pressure only'],
     watchNext:['GDELT availability','Verified regional escalation signals','Major diplomatic or logistics changes'],
     sourceConfidence:{availableSources:['GDELT','Google News','USGS','NOAA'],limitedSources:['Guardian optional'],note:'Live public source retrieval is degraded; ORACLE can use multiple free public feeds plus baseline signals.'},
-    verifiedSources:['GDELT','Google News','USGS','NOAA'],
+    verifiedSources:['GDELT','Google News','USGS','NOAA'], evidence:{sourceCount:4, sources:['GDELT','Google News','USGS','NOAA'], articleCount:0, crossChecks:2, reliability:72}, articleCount:0,
     topEvent:{ title:'Public source monitoring active', summary:'No dominant global escalation signal is available from current public inputs.', source:'GDELT', url:'https://www.gdeltproject.org/' },
     drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28 },
     regions:[{name:'Ukraine',score:44,change:'+1',trend:'Watch'},{name:'Taiwan Strait',score:39,change:'0',trend:'Watch'},{name:'Middle East',score:37,change:'0',trend:'Stable'},{name:'South China Sea',score:31,change:'0',trend:'Stable'},{name:'Korea',score:25,change:'0',trend:'Stable'}],
