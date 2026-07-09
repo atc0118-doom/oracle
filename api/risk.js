@@ -202,12 +202,13 @@ Required JSON keys:
 - assessment: 2 concise sentences explaining the current global risk posture.
 - brief: 1 concise sentence for the hero area.
 - scoreReason: 2-4 concise sentences explaining why the score is at this level, referring to the driver categories and synchronization/containment.
+- reasoningLines: array of exactly 5 objects. Each object must have label, delta, explanation. delta is an integer from -8 to 12 explaining score pressure, for example {"label":"Military pressure","delta":6,"explanation":"Taiwan Strait and Ukraine signals remain active."}.
 - topEventIndex: integer from 1 to the supplied headline list, selecting the most globally relevant item.
 - topEventTitle: short neutral title based on the selected headline.
 - topSummary: 1-2 concise sentences explaining the selected event's relevance.
 - outlook24h: one of STABLE, WATCH, ELEVATED, COOLING.
 - riskBias: one of RISING, FLAT, FALLING.
-- suggestedScore: integer 0-100 representing your independent global risk score from supplied headlines and calculated signals. Be conservative but do not understate direct military escalation involving major states.
+- suggestedScore: integer 0-100 representing your independent global risk score from supplied headlines and calculated signals. Use this scale: 0-20 unusually calm, 21-35 normal monitoring, 36-55 watch/elevated tension, 56-75 dangerous, 76-100 crisis. Do not understate direct military escalation involving major states.
 - scoreAdjustment: integer from -8 to 12. Use this only for AI judgement over the rule score; be conservative.
 - keyDrivers: array of exactly 3 short strings naming the strongest current risk drivers.
 - watchItems: array of exactly 3 short strings naming what to monitor next.
@@ -265,6 +266,11 @@ ${headlines}`;
 function normalizeAi(ai, model){
   const pick = (value, fallback='') => clean(String(value || fallback)).slice(0,900);
   const arr3 = (value, fallback) => Array.isArray(value) ? value.map(v=>clean(String(v))).filter(Boolean).slice(0,3) : fallback;
+  const reasoningLines = Array.isArray(ai.reasoningLines) ? ai.reasoningLines.map(x=>({
+    label: pick(x?.label, 'Risk signal').slice(0,60),
+    delta: clamp(Math.round(Number(x?.delta || 0)), -8, 12),
+    explanation: pick(x?.explanation, 'Public signal considered in the final score.').slice(0,160)
+  })).filter(x=>x.label).slice(0,5) : [];
   const outlook = ['STABLE','WATCH','ELEVATED','COOLING'].includes(String(ai.outlook24h || '').toUpperCase()) ? String(ai.outlook24h).toUpperCase() : 'WATCH';
   const bias = ['RISING','FLAT','FALLING'].includes(String(ai.riskBias || '').toUpperCase()) ? String(ai.riskBias).toUpperCase() : 'FLAT';
   const adj = clamp(Math.round(Number(ai.scoreAdjustment || 0)), -4, 4);
@@ -278,6 +284,13 @@ function normalizeAi(ai, model){
     outlook24h: outlook,
     riskBias: bias,
     scoreAdjustment: adj,
+    reasoningLines: reasoningLines.length ? reasoningLines : [
+      { label:'Military pressure', delta:3, explanation:'Military headlines remain the strongest component.' },
+      { label:'Diplomatic friction', delta:2, explanation:'Diplomatic pressure contributes but remains contained.' },
+      { label:'Cyber/logistics', delta:1, explanation:'Secondary signals are monitored without broad surge.' },
+      { label:'Containment', delta:-3, explanation:'No synchronized global escalation is detected.' },
+      { label:'AI judgement', delta:adj, explanation:'AI adjustment remains conservative.' }
+    ],
     keyDrivers: arr3(ai.keyDrivers, ['Military pressure','Diplomatic friction','Regional concentration']),
     watchItems: arr3(ai.watchItems, ['Ukraine','Taiwan Strait','Middle East']),
     xPost: pick(ai.xPost, ''),
@@ -290,8 +303,9 @@ function buildPayload(analyzed, articles, llm, source){
   const aiAdjustment = aiOk ? clamp(Math.round(Number(llm.scoreAdjustment || 0)), -8, 12) : 0;
   const aiSuggested = aiOk && Number.isFinite(Number(llm.suggestedScore)) ? clamp(Math.round(Number(llm.suggestedScore)), 0, 100) : null;
   const ruleWithAi = analyzed.final + aiAdjustment;
-  const blended = aiSuggested === null ? ruleWithAi : Math.round(ruleWithAi * 0.55 + aiSuggested * 0.45);
-  const score = clamp(Math.max(blended, analyzed.floor || 5), 5, 92);
+  const blended = aiSuggested === null ? ruleWithAi : Math.round(ruleWithAi * 0.45 + aiSuggested * 0.55);
+  const standingFloor = minimumStandingFloor(analyzed, articles, source);
+  const score = clamp(Math.max(blended, analyzed.floor || 5, standingFloor), 5, 92);
   const state = stateFromScore(score);
   const topRegion = analyzed.regions[0]?.name || 'Global';
   const selectedIndex = aiOk ? clamp(Math.round(Number(llm.topEventIndex || 1)), 1, Math.max(articles.length,1)) - 1 : -1;
@@ -310,7 +324,7 @@ function buildPayload(analyzed, articles, llm, source){
   return {
     ok:true,
     mode:'live',
-    engineVersion:'ORACLE ENGINE v4.0',
+    engineVersion:'ORACLE ENGINE v4.1 REASONING',
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
     aiError: llm?.error || source?.sourceError || null,
@@ -326,6 +340,7 @@ function buildPayload(analyzed, articles, llm, source){
     outlook24h: aiOk ? llm.outlook24h : 'WATCH',
     riskBias: aiOk ? llm.riskBias : 'FLAT',
     keyDrivers: aiOk ? llm.keyDrivers : ['Military pressure','Diplomatic friction','Regional concentration'],
+    reasoningLines: aiOk ? llm.reasoningLines : baselineReasoning(analyzed, score),
     watchItems: aiOk ? llm.watchItems : [topRegion,'Taiwan Strait','Middle East'],
     brief: aiOk ? llm.brief : `${topRegion} remains the highest monitored pressure point. Global escalation risk remains ${score >= 50 ? 'elevated' : 'contained'}.`,
     assessment: aiOk ? llm.assessment : `ORACLE detected ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`,
@@ -339,7 +354,7 @@ function buildPayload(analyzed, articles, llm, source){
     },
     drivers: analyzed.drivers,
     weights: WEIGHTS,
-    calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), aiAdjustment, aiSuggestedScore: aiSuggested, crisisFloor: analyzed.floor, final: score, ruleFinal: analyzed.final },
+    calculation: { raw: round1(analyzed.raw), containment: round1(analyzed.adjustment), aiAdjustment, aiSuggestedScore: aiSuggested, crisisFloor: analyzed.floor, standingFloor, final: score, ruleFinal: analyzed.final },
     regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend })),
     timeline: timeline.length ? timeline : [{time:'NOW', text:'Monitoring active.'}],
     metrics:{
@@ -349,6 +364,30 @@ function buildPayload(analyzed, articles, llm, source){
       logistics: analyzed.drivers.Logistics > 45 ? 'WATCH' : 'STABLE', logisticsSub: analyzed.drivers.Logistics > 45 ? 'PRESSURE' : 'CONTAINED'
     }
   };
+}
+
+
+function minimumStandingFloor(analyzed, articles, source){
+  // ORACLE should not treat a normal world-risk day as near-zero. This is not alarmism;
+  // it preserves the scale: 0-20 = unusually calm, 21-35 = normal monitoring.
+  const corpus = (articles || []).map(a=>a.title).join(' ').toLowerCase();
+  let floor = source?.sourceMode?.includes('FALLBACK') ? 24 : 22;
+  if(analyzed?.regions?.[0]?.score >= 35) floor = Math.max(floor, 26);
+  if(analyzed?.drivers?.Military >= 35 || analyzed?.drivers?.Diplomatic >= 30) floor = Math.max(floor, 28);
+  if(corpus.includes('taiwan') || corpus.includes('ukraine') || corpus.includes('iran') || corpus.includes('israel')) floor = Math.max(floor, 29);
+  if(corpus.includes('strike') || corpus.includes('missile') || corpus.includes('drone') || corpus.includes('airstrike')) floor = Math.max(floor, 34);
+  if((corpus.includes('u.s.') || corpus.includes('united states')) && (corpus.includes('iran') || corpus.includes('china') || corpus.includes('russia')) && (corpus.includes('strike') || corpus.includes('attack'))) floor = Math.max(floor, 42);
+  return clamp(floor, 5, 55);
+}
+
+function baselineReasoning(analyzed, score){
+  return [
+    { label:'Military pressure', delta:Math.round((analyzed.drivers?.Military || 0)/12), explanation:'Military signals are the largest weighted component of the index.' },
+    { label:'Diplomatic friction', delta:Math.round((analyzed.drivers?.Diplomatic || 0)/18), explanation:'Diplomatic and geopolitical signals add secondary pressure.' },
+    { label:'Cyber / logistics', delta:Math.round(((analyzed.drivers?.Cyber || 0)+(analyzed.drivers?.Logistics || 0))/35), explanation:'Cyber and logistics remain monitored without broad disruption.' },
+    { label:'Containment', delta:Math.round(analyzed.adjustment || 0), explanation:'Signals remain regionally concentrated rather than globally synchronized.' },
+    { label:'Standing floor', delta:score >= 25 ? 2 : 0, explanation:'Normal global monitoring conditions keep the index above unusually calm levels.' }
+  ];
 }
 
 function stateFromScore(s){ if(s>=70)return'CRITICAL'; if(s>=50)return'HIGH'; if(s>=30)return'WATCH'; return'STABLE'; }
