@@ -20,6 +20,7 @@ const fallback = {
   keyDrivers: ['Regional military pressure','Diplomatic friction','Contained logistics signal'],
   watchNext: ['Verified escalation signals','Major diplomatic statements','Cyber or logistics spillover'],
   sourceConfidence: { availableSources:['GDELT'], limitedSources:[], note:'Public sources are monitored for situational awareness.' },
+  verifiedSources: ['GDELT'],
   topEvent: { title: 'Global signals under monitoring', summary: 'Public signals indicate localized pressure across monitored regions.', source: 'GDELT', url: 'https://www.gdeltproject.org/' },
   drivers: { Military: 42, Diplomatic: 32, Cyber: 18, Logistics: 12, Finance: 9, Disaster: 6 },
   calculation: { raw: 32.6, containment: -4.6, final: 28, lines: [] },
@@ -67,6 +68,7 @@ function render(data){
   renderLists('keyDrivers', currentData.keyDrivers || fallback.keyDrivers);
   renderLists('watchNext', currentData.watchNext || fallback.watchNext);
   renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
+  renderVerifiedSources(currentData.verifiedSources || fallback.verifiedSources || []);
   $('confidence').textContent = `${Math.round(currentData.confidence || 70)}%`;
   $('confidenceBar').style.width = `${clamp(currentData.confidence || 70,0,100)}%`;
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
@@ -111,6 +113,16 @@ function renderSourceConfidence(sc){
   const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em>${escapeHtml(s)}</em>`).join('');
   el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
 }
+
+function renderVerifiedSources(sources){
+  const el = $('verifiedSources');
+  if(!el) return;
+  const list = Array.isArray(sources) ? sources.slice(0,8) : [];
+  el.innerHTML = list.length
+    ? list.map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('')
+    : '<em>No verified source list available</em>';
+}
+
 function escapeHtml(str=''){
   return String(str).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 }
