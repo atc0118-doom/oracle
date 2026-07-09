@@ -17,36 +17,79 @@ const CATEGORY_KEYWORDS = {
 };
 
 const WEIGHTS = { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const gdeltCache = globalThis.__ORACLE_GDELT_CACHE || (globalThis.__ORACLE_GDELT_CACHE = { articles:null, time:0, payload:null, payloadTime:0 });
 
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=240');
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
 
   try{
-    const articles = await fetchGdelt();
+    if(gdeltCache.payload && Date.now() - gdeltCache.payloadTime < CACHE_TTL_MS){
+      return res.status(200).json({ ...gdeltCache.payload, cache:'HIT' });
+    }
+
+    const source = await fetchGdeltSafe();
+    const articles = source.articles;
     const analyzed = analyzeArticles(articles);
-    const llm = await aiAssessment(analyzed, articles);
-    const payload = buildPayload(analyzed, articles, llm);
+    const llm = await aiAssessment(analyzed, articles, source);
+    const payload = buildPayload(analyzed, articles, llm, source);
+
+    gdeltCache.payload = payload;
+    gdeltCache.payloadTime = Date.now();
+
     res.status(200).json(payload);
   }catch(error){
     res.status(200).json(fallbackPayload(error?.message || 'unknown'));
   }
 }
 
-async function fetchGdelt(){
+async function fetchGdeltSafe(){
+  try{
+    const cachedArticles = gdeltCache.articles;
+    if(cachedArticles && Date.now() - gdeltCache.time < CACHE_TTL_MS){
+      return { articles: cachedArticles, sourceMode:'GDELT CACHE', sourceError:null };
+    }
+
+    const articles = await fetchGdeltRaw();
+    gdeltCache.articles = articles;
+    gdeltCache.time = Date.now();
+    return { articles, sourceMode:'GDELT LIVE', sourceError:null };
+  }catch(error){
+    const message = error?.message || 'gdelt_error';
+    if(gdeltCache.articles?.length){
+      return { articles: gdeltCache.articles, sourceMode:'GDELT STALE CACHE', sourceError:message };
+    }
+    return { articles: fallbackArticles(), sourceMode:'BASELINE FALLBACK', sourceError:message };
+  }
+}
+
+async function fetchGdeltRaw(){
   const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=75&sort=hybridrel&timespan=24h`;
-  const r = await fetch(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence' } });
+  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=35&sort=hybridrel&timespan=12h`;
+  const r = await fetch(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/3.3' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
   const j = await r.json();
-  return (j.articles || []).map(a=>({
+  const articles = (j.articles || []).map(a=>({
     title: clean(a.title),
     url: a.url,
     source: sourceName(a.domain),
     domain: a.domain || '',
     seen: a.seendate || '',
     language: a.language || ''
-  })).filter(a=>a.title && a.url).slice(0,60);
+  })).filter(a=>a.title && a.url).slice(0,35);
+  if(!articles.length) throw new Error('gdelt empty');
+  return articles;
+}
+
+function fallbackArticles(){
+  return [
+    { title:'Ukraine remains a primary monitored military pressure point', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/' },
+    { title:'Taiwan Strait military and diplomatic signals remain under monitoring', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/' },
+    { title:'Middle East diplomatic and maritime risk signals remain contained', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/' },
+    { title:'Cyber alerts show watch-level activity without global surge', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/' },
+    { title:'Logistics and finance indicators remain stable despite regional pressure', source:'ORACLE Baseline', url:'https://www.gdeltproject.org/' }
+  ];
 }
 
 function clean(s=''){ return String(s).replace(/\s+/g,' ').trim(); }
@@ -102,38 +145,21 @@ function pickTopEvent(articles, regions){
   return articles.find(a=>a.title.toLowerCase().includes(key)) || articles[0];
 }
 
-async function aiAssessment(analyzed, articles){
+async function aiAssessment(analyzed, articles, source){
   const key = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  const debug = {
-    keyPresent: Boolean(key),
-    keyPrefix: key ? `${String(key).slice(0, 7)}...` : 'missing',
-    model,
-    stage: 'init'
-  };
-
   if(!key){
-    return {
-      error:'OPENAI_API_KEY is missing',
-      detail:'Vercel Environment Variables に OPENAI_API_KEY が設定されていないか、再デプロイ前のビルドを見ています。',
-      debug
-    };
+    return { error:'OPENAI_API_KEY missing', debug:{ stage:'env', hasKey:false } };
   }
 
   try{
-    const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n') || 'No headlines supplied.';
-    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze only the supplied public headlines and calculated signals. Return strict JSON only with these exact keys: assessment, brief, topSummary, scoreReason, xPost. No markdown. Keep tone calm, concise, non-alarmist. Use English.\n\nGlobal score: ${analyzed.final}\nDrivers: ${JSON.stringify(analyzed.drivers)}\nRegions: ${JSON.stringify(analyzed.regions)}\nCalculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}\nHeadlines:\n${headlines}`;
+    const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n');
+    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze only the supplied public headlines and calculated signals. Return strict JSON only with keys: assessment, brief, topSummary, scoreReason, xPost. No markdown. Keep tone calm, concise, non-alarmist.\n\nSource mode: ${source?.sourceMode || 'unknown'}\nSource error: ${source?.sourceError || 'none'}\nGlobal score: ${analyzed.final}\nDrivers: ${JSON.stringify(analyzed.drivers)}\nRegions: ${JSON.stringify(analyzed.regions)}\nCalculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}\nHeadlines:\n${headlines}`;
 
-    debug.stage = 'requesting_openai';
-    const started = Date.now();
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method:'POST',
-      headers:{
-        'content-type':'application/json',
-        'authorization':`Bearer ${key}`
-      },
+      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${key}` },
       body: JSON.stringify({
-        model,
+        model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         response_format: { type:'json_object' },
         messages:[
           { role:'system', content:'You output valid compact JSON only.' },
@@ -144,82 +170,28 @@ async function aiAssessment(analyzed, articles){
       })
     });
 
-    debug.httpStatus = r.status;
-    debug.elapsedMs = Date.now() - started;
-    debug.stage = 'received_openai_response';
-
-    const rawText = await r.text();
-    debug.rawPreview = rawText.slice(0, 500);
-
     let j = null;
-    try{
-      j = rawText ? JSON.parse(rawText) : null;
-    }catch(parseErr){
-      return {
-        error:`OpenAI returned non-JSON HTTP ${r.status}`,
-        detail: rawText.slice(0, 800) || String(parseErr?.message || parseErr),
-        debug
-      };
+    try{ j = await r.json(); }catch(parseError){
+      return { error:`openai ${r.status} invalid_json`, debug:{ stage:'openai_parse', status:r.status, message:parseError?.message || 'parse failed' } };
     }
 
     if(!r.ok){
-      const message = j?.error?.message || JSON.stringify(j).slice(0, 800) || 'Unknown OpenAI error';
-      const code = j?.error?.code || j?.error?.type || 'unknown';
-      return {
-        error:`OpenAI HTTP ${r.status}`,
-        detail:`${code}: ${message}`,
-        debug
-      };
+      return { error:`openai ${r.status}: ${j?.error?.message || 'unknown'}`, debug:{ stage:'openai_http', status:r.status, message:j?.error?.message || null, type:j?.error?.type || null, code:j?.error?.code || null } };
     }
 
-    const text = j?.choices?.[0]?.message?.content || '';
-    debug.stage = 'parsing_model_json';
-    debug.contentPreview = text.slice(0, 500);
-
-    if(!text){
-      return {
-        error:'OpenAI response had no message content',
-        detail: JSON.stringify(j).slice(0, 900),
-        debug
-      };
-    }
-
-    let parsed;
+    const text = j.choices?.[0]?.message?.content || '';
     try{
-      parsed = JSON.parse(text);
-    }catch(parseErr){
-      return {
-        error:'OpenAI message was not valid JSON',
-        detail: text.slice(0, 900),
-        debug
-      };
+      const parsed = JSON.parse(text);
+      return { ...parsed, debug:{ stage:'openai_ok', status:r.status, model:j.model || process.env.OPENAI_MODEL || 'gpt-4.1-mini' } };
+    }catch(parseGenerated){
+      return { error:'openai generated invalid json', debug:{ stage:'model_json_parse', message:parseGenerated?.message || 'invalid_json', raw:text.slice(0,500) } };
     }
-
-    debug.stage = 'ok';
-    return {
-      assessment: cleanAiText(parsed.assessment),
-      brief: cleanAiText(parsed.brief),
-      topSummary: cleanAiText(parsed.topSummary),
-      scoreReason: cleanAiText(parsed.scoreReason),
-      xPost: cleanAiText(parsed.xPost),
-      debug
-    };
   }catch(e){
-    debug.stage = 'exception';
-    debug.exception = e?.stack || e?.message || String(e);
-    return {
-      error:'OpenAI request failed',
-      detail:e?.message || String(e),
-      debug
-    };
+    return { error:e?.message || 'ai_error', debug:{ stage:'openai_fetch', message:e?.message || 'fetch failed', cause:e?.cause ? String(e.cause) : null } };
   }
 }
 
-function cleanAiText(value){
-  return typeof value === 'string' ? value.replace(/\s+/g,' ').trim() : '';
-}
-
-function buildPayload(analyzed, articles, llm){
+function buildPayload(analyzed, articles, llm, source){
   const score = analyzed.final;
   const state = stateFromScore(score);
   const top = analyzed.top || { title:'Public signals under monitoring', source:'GDELT', url:'https://www.gdeltproject.org/' };
@@ -232,8 +204,10 @@ function buildPayload(analyzed, articles, llm){
     mode:'live',
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
-    aiError: llm?.detail || llm?.error || null,
+    aiError: llm?.error || source?.sourceError || null,
     aiDebug: llm?.debug || null,
+    sourceMode: source?.sourceMode || 'UNKNOWN',
+    sourceError: source?.sourceError || null,
     updatedAt:new Date().toISOString(),
     score,
     previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
@@ -265,7 +239,7 @@ function round1(n){ return Math.round(Number(n||0)*10)/10; }
 
 function fallbackPayload(error){
   return {
-    ok:true, mode:'fallback', error, aiMode:'RULE BASED', aiError:error, aiDebug:{stage:'fallback', error}, updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:70, sourceHealth:72,
+    ok:true, mode:'fallback', error, aiMode:'RULE BASED', aiError:error, aiDebug:{stage:'fallback', error}, sourceMode:'FALLBACK', updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:70, sourceHealth:72,
     brief:'Public sources are partially available. ORACLE is operating in conservative monitoring mode.',
     assessment:'Signal volume is limited. The system is maintaining a stable global risk posture until stronger signals appear.',
     scoreReason:'Fallback score is based on conservative baseline monitoring values because live source retrieval did not complete.',
