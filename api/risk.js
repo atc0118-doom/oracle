@@ -104,17 +104,36 @@ function pickTopEvent(articles, regions){
 
 async function aiAssessment(analyzed, articles){
   const key = process.env.OPENAI_API_KEY;
-  if(!key) return null;
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const debug = {
+    keyPresent: Boolean(key),
+    keyPrefix: key ? `${String(key).slice(0, 7)}...` : 'missing',
+    model,
+    stage: 'init'
+  };
+
+  if(!key){
+    return {
+      error:'OPENAI_API_KEY is missing',
+      detail:'Vercel Environment Variables に OPENAI_API_KEY が設定されていないか、再デプロイ前のビルドを見ています。',
+      debug
+    };
+  }
 
   try{
-    const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n');
-    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze only the supplied public headlines and calculated signals. Return strict JSON only with keys: assessment, brief, topSummary, scoreReason, xPost. No markdown. Keep tone calm, concise, non-alarmist.\n\nGlobal score: ${analyzed.final}\nDrivers: ${JSON.stringify(analyzed.drivers)}\nRegions: ${JSON.stringify(analyzed.regions)}\nCalculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}\nHeadlines:\n${headlines}`;
+    const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n') || 'No headlines supplied.';
+    const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze only the supplied public headlines and calculated signals. Return strict JSON only with these exact keys: assessment, brief, topSummary, scoreReason, xPost. No markdown. Keep tone calm, concise, non-alarmist. Use English.\n\nGlobal score: ${analyzed.final}\nDrivers: ${JSON.stringify(analyzed.drivers)}\nRegions: ${JSON.stringify(analyzed.regions)}\nCalculation: raw=${round1(analyzed.raw)}, adjustment=${round1(analyzed.adjustment)}, final=${analyzed.final}\nHeadlines:\n${headlines}`;
 
+    debug.stage = 'requesting_openai';
+    const started = Date.now();
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method:'POST',
-      headers:{ 'content-type':'application/json', authorization:`Bearer ${key}` },
+      headers:{
+        'content-type':'application/json',
+        'authorization':`Bearer ${key}`
+      },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+        model,
         response_format: { type:'json_object' },
         messages:[
           { role:'system', content:'You output valid compact JSON only.' },
@@ -125,13 +144,79 @@ async function aiAssessment(analyzed, articles){
       })
     });
 
-    const j = await r.json();
-    if(!r.ok) return { error:`HTTP ${r.status}`, detail:j.error?.message||JSON.stringify(j) };
-    const text = j.choices?.[0]?.message?.content || '';
-    return JSON.parse(text);
+    debug.httpStatus = r.status;
+    debug.elapsedMs = Date.now() - started;
+    debug.stage = 'received_openai_response';
+
+    const rawText = await r.text();
+    debug.rawPreview = rawText.slice(0, 500);
+
+    let j = null;
+    try{
+      j = rawText ? JSON.parse(rawText) : null;
+    }catch(parseErr){
+      return {
+        error:`OpenAI returned non-JSON HTTP ${r.status}`,
+        detail: rawText.slice(0, 800) || String(parseErr?.message || parseErr),
+        debug
+      };
+    }
+
+    if(!r.ok){
+      const message = j?.error?.message || JSON.stringify(j).slice(0, 800) || 'Unknown OpenAI error';
+      const code = j?.error?.code || j?.error?.type || 'unknown';
+      return {
+        error:`OpenAI HTTP ${r.status}`,
+        detail:`${code}: ${message}`,
+        debug
+      };
+    }
+
+    const text = j?.choices?.[0]?.message?.content || '';
+    debug.stage = 'parsing_model_json';
+    debug.contentPreview = text.slice(0, 500);
+
+    if(!text){
+      return {
+        error:'OpenAI response had no message content',
+        detail: JSON.stringify(j).slice(0, 900),
+        debug
+      };
+    }
+
+    let parsed;
+    try{
+      parsed = JSON.parse(text);
+    }catch(parseErr){
+      return {
+        error:'OpenAI message was not valid JSON',
+        detail: text.slice(0, 900),
+        debug
+      };
+    }
+
+    debug.stage = 'ok';
+    return {
+      assessment: cleanAiText(parsed.assessment),
+      brief: cleanAiText(parsed.brief),
+      topSummary: cleanAiText(parsed.topSummary),
+      scoreReason: cleanAiText(parsed.scoreReason),
+      xPost: cleanAiText(parsed.xPost),
+      debug
+    };
   }catch(e){
-    return { error:e?.message || 'ai_error' };
+    debug.stage = 'exception';
+    debug.exception = e?.stack || e?.message || String(e);
+    return {
+      error:'OpenAI request failed',
+      detail:e?.message || String(e),
+      debug
+    };
   }
+}
+
+function cleanAiText(value){
+  return typeof value === 'string' ? value.replace(/\s+/g,' ').trim() : '';
 }
 
 function buildPayload(analyzed, articles, llm){
@@ -148,6 +233,7 @@ function buildPayload(analyzed, articles, llm){
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
     aiError: llm?.detail || llm?.error || null,
+    aiDebug: llm?.debug || null,
     updatedAt:new Date().toISOString(),
     score,
     previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
@@ -179,7 +265,7 @@ function round1(n){ return Math.round(Number(n||0)*10)/10; }
 
 function fallbackPayload(error){
   return {
-    ok:true, mode:'fallback', error, aiMode:'RULE BASED', updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:70, sourceHealth:72,
+    ok:true, mode:'fallback', error, aiMode:'RULE BASED', aiError:error, aiDebug:{stage:'fallback', error}, updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:70, sourceHealth:72,
     brief:'Public sources are partially available. ORACLE is operating in conservative monitoring mode.',
     assessment:'Signal volume is limited. The system is maintaining a stable global risk posture until stronger signals appear.',
     scoreReason:'Fallback score is based on conservative baseline monitoring values because live source retrieval did not complete.',
