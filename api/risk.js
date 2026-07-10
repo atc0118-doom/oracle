@@ -97,7 +97,7 @@ async function fetchWithTimeout(url, options={}){
 }
 
 async function fetchGdelt(){
-  const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
+  const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
@@ -114,7 +114,7 @@ async function fetchGdelt(){
 }
 
 async function fetchGoogleNews(){
-  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR shipping OR NATO OR Russia OR China) when:1d');
+  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China) when:1d');
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('google_news ' + r.status);
@@ -125,7 +125,7 @@ async function fetchGoogleNews(){
 async function fetchGuardian(){
   const key = process.env.GUARDIAN_API_KEY;
   if(!key) return [];
-  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR shipping OR Russia OR China');
+  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China');
   const url = `https://content.guardianapis.com/search?q=${q}&section=world|technology|business|environment&show-fields=trailText&order-by=newest&page-size=20&api-key=${key}`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('guardian ' + r.status);
@@ -246,13 +246,18 @@ function analyzeArticles(articles){
   const driverSources = Object.fromEntries(Object.keys(CATEGORY_KEYWORDS).map(k=>[k,new Set()]));
   const regionRaw = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,0]));
   const regionSources = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,new Set()]));
+  const regionArticles = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,0]));
+  const regionTerms = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,new Set()]));
+  const regionFreshness = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,0]));
   const articleScores = [];
 
   for(const a of list){
+    const titleText = `${a.title || ''}`.toLowerCase();
     const text = `${a.title || ''} ${a.source || ''}`.toLowerCase();
     const w = articleWeight(a);
     let catTotal = 0;
     const cats = {};
+
     for(const [cat, terms] of Object.entries(CATEGORY_KEYWORDS)){
       const hits = countOccurrences(text, terms);
       if(hits){
@@ -263,59 +268,107 @@ function analyzeArticles(articles){
         catTotal += val;
       }
     }
+
     let regTotal = 0;
     const regs = {};
     for(const r of REGION_KEYWORDS){
-      const hits = countOccurrences(text, r.terms);
+      const matchedTerms = r.terms.filter(term=>titleText.includes(term));
+      const hits = countOccurrences(titleText, r.terms);
       if(hits){
         const val = Math.min(hits, 5) * w;
         regionRaw[r.name] += val;
         regionSources[r.name].add(a.source || 'Source');
+        regionArticles[r.name] += 1;
+        matchedTerms.forEach(term=>regionTerms[r.name].add(term));
+
+        const seenAt = a.seen ? new Date(a.seen).getTime() : NaN;
+        if(Number.isFinite(seenAt)){
+          const ageHours = Math.max(0, (Date.now() - seenAt) / 36e5);
+          regionFreshness[r.name] += ageHours <= 6 ? 1 : ageHours <= 18 ? .65 : .35;
+        }else{
+          regionFreshness[r.name] += .35;
+        }
+
         regs[r.name] = hits;
         regTotal += val;
       }
     }
+
     const sourceBoost = /reuters|ap news|associated press|bbc|npr|al jazeera|guardian|cnbc/i.test(a.source || '') ? 1.8 : 0;
     articleScores.push({ article:a, score: catTotal*1.15 + regTotal*1.35 + sourceBoost, cats, regs });
   }
 
   const maxDriverRaw = Math.max(1, ...Object.values(driverRaw));
   const drivers = {};
+  const driverEvidence = {};
   for(const cat of Object.keys(CATEGORY_KEYWORDS)){
     const sourceBoost = Math.min(driverSources[cat].size, 6) * 2.5;
     const volumeBoost = Math.log1p(total) * 1.6;
     drivers[cat] = clamp(Math.round(4 + (driverRaw[cat] / maxDriverRaw) * 68 + sourceBoost + volumeBoost), 3, 92);
+    driverEvidence[cat] = {
+      evidenceScore: drivers[cat],
+      signals: round1(driverRaw[cat] || 0),
+      sources: driverSources[cat].size,
+      contribution: round1((drivers[cat] || 0) * (WEIGHTS[cat] || 0)),
+      weight: WEIGHTS[cat] || 0
+    };
   }
 
   const maxRegionRaw = Math.max(1, ...Object.values(regionRaw));
   const regions = REGION_KEYWORDS.map(r=>{
     const raw = regionRaw[r.name] || 0;
     const sources = regionSources[r.name].size;
-    if(raw <= 0 || sources <= 0){
-      return { name:r.name, score:0, change:'+0', trend:'No verified signal', count:0, raw:0, sources:0 };
+    const articleCount = regionArticles[r.name] || 0;
+    const terms = [...regionTerms[r.name]].slice(0,8);
+    const freshness = round1(regionFreshness[r.name] || 0);
+
+    if(raw <= 0 || sources <= 0 || articleCount <= 0){
+      return { name:r.name, score:0, change:'+0', trend:'No verified signal', count:0, raw:0, sources:0, articles:0, terms:[], freshness:0, breakdown:{ signal:0, source:0, coverage:0, freshness:0 } };
     }
-    const sourceBoost = Math.min(sources, 6) * 2;
-    const score = clamp(Math.round(8 + (raw / maxRegionRaw) * 44 + drivers.Military*0.08 + drivers.Diplomatic*0.04 + sourceBoost), 8, 88);
-    return { name:r.name, score, change: raw>4?'+2':raw>0?'+1':'+0', trend:raw>4?'Rising':'Watch', count:raw, raw:round1(raw), sources };
+
+    // Region score is based only on region-specific evidence. Shared global
+    // Military/Diplomatic driver values are intentionally excluded.
+    const signalComponent = (raw / maxRegionRaw) * 46;
+    const sourceComponent = Math.min(sources, 6) * 3;
+    const coverageComponent = Math.min(articleCount, 8) * 1.5;
+    const freshnessComponent = Math.min(freshness, 6) * 1.2;
+    const score = clamp(Math.round(8 + signalComponent + sourceComponent + coverageComponent + freshnessComponent), 8, 88);
+
+    return {
+      name:r.name,
+      score,
+      change: raw>4?'+2':raw>0?'+1':'+0',
+      trend:raw>4?'Rising':'Watch',
+      count:raw,
+      raw:round1(raw),
+      sources,
+      articles:articleCount,
+      terms,
+      freshness,
+      breakdown:{ signal:round1(signalComponent), source:round1(sourceComponent), coverage:round1(coverageComponent), freshness:round1(freshnessComponent) }
+    };
   }).sort((a,b)=>b.score-a.score).slice(0,5);
 
+  const raw = Object.entries(drivers).reduce((sum,[k,v])=> sum + v*(WEIGHTS[k]||0), 0);
   const regionTotal = Object.values(regionRaw).reduce((s,v)=>s+v,0) || 1;
   const contributors = regions.map(r=>{
     const signals = Number(r.raw || r.count || 0);
     const sources = Number(r.sources || 0);
     const hasEvidence = signals > 0 && sources > 0;
+    const share = hasEvidence ? clamp(Math.round(((regionRaw[r.name] || 0) / regionTotal) * 100), 0, 100) : 0;
     return {
       name:r.name,
-      share: hasEvidence ? clamp(Math.round(((regionRaw[r.name] || 0) / regionTotal) * 100), 0, 100) : 0,
-      impact: hasEvidence ? Math.round(r.score * 0.22) : 0,
-      score: hasEvidence ? r.score : 0,
-      trend: hasEvidence ? r.trend : 'No verified signal',
-      signals: hasEvidence ? round1(signals) : 0,
-      sources: hasEvidence ? sources : 0
+      share,
+      impact:hasEvidence ? round1((share / 100) * raw * .65) : 0,
+      score:hasEvidence ? r.score : 0,
+      trend:hasEvidence ? r.trend : 'No verified signal',
+      signals:hasEvidence ? round1(signals) : 0,
+      sources:hasEvidence ? sources : 0,
+      articles:hasEvidence ? r.articles : 0,
+      terms:hasEvidence ? r.terms : []
     };
   });
 
-  const raw = Object.entries(drivers).reduce((sum,[k,v])=> sum + v*(WEIGHTS[k]||0), 0);
   const adjustment = stabilityAdjustment(drivers, regions, total, contributors);
   const duplicateReduction = duplicateNoiseReduction(list);
   const globalNormalization = globalSynchronizationAdjustment(contributors, drivers);
@@ -324,7 +377,7 @@ function analyzeArticles(articles){
   const confidence = clamp(Math.round(52 + Math.min(list.length,80)*0.18 + sourceDiversity*3 + (process.env.OPENAI_API_KEY ? 5 : 0)), 45, 92);
   const top = pickTopEventFromScores(articleScores, regions);
 
-  return { drivers, regions, raw, adjustment, duplicateReduction, globalNormalization, final, confidence, top, total, contributors, driverRaw, regionRaw };
+  return { drivers, driverEvidence, regions, raw, adjustment, duplicateReduction, globalNormalization, final, confidence, top, total, contributors, driverRaw, regionRaw };
 }
 
 function duplicateNoiseReduction(articles=[]){
@@ -767,9 +820,10 @@ function buildPayload(analyzed, articles, llm, meta={}){
     hashtags: aiOk ? safeHashtags(llm.hashtags) : null,
     topEvent: { title: top.title, summary: topEventSummary(top, analyzed), source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
     drivers: analyzed.drivers,
+    driverEvidence: analyzed.driverEvidence || {},
     weights: WEIGHTS,
     calculation: { raw: round1(analyzed.raw), stability: round1(analyzed.adjustment), duplicateNoise: round1(analyzed.duplicateReduction), globalNormalization: round1(analyzed.globalNormalization), containment: round1(analyzed.adjustment + analyzed.duplicateReduction + analyzed.globalNormalization), final: score, reasoning: buildReasoning(analyzed, topRegion) },
-    regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend, signals:round1(r.raw || r.count || 0), sources:r.sources || 0 })),
+    regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend, signals:round1(r.raw || r.count || 0), sources:r.sources || 0, articles:r.articles || 0, terms:r.terms || [], freshness:r.freshness || 0, breakdown:r.breakdown || {} })),
     timeline: timeline.length ? timeline : [{time:'NOW', text:'Monitoring active.'}],
     metrics:{
       conflicts: String(Math.max(7, analyzed.regions.filter(r=>r.score>35).length + 4)), conflictsSub:'+1 / 24H · MONITORED',
