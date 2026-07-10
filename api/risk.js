@@ -22,6 +22,21 @@ const CATEGORY_KEYWORDS = {
 };
 
 const WEIGHTS = { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
+
+// A region must clear a minimum evidence bar before it's treated as a real
+// signal. Previously any raw>0 && sources>0 && articleCount>0 combination
+// (even a single incidental keyword hit in one article from one source)
+// passed straight through to a non-zero score with a 'Rising'/'Watch' label.
+// That let a single weak mention look like a verified regional trend. Now a
+// thin single-source/single-article hit must also clear a raw-strength
+// threshold, or come from at least two independent sources, before it counts.
+const MIN_REGION_RAW = 1.5;
+const MIN_REGION_SOURCES_FOR_WEAK_SIGNAL = 2;
+function hasSufficientRegionEvidence(raw, sources, articleCount){
+  if(raw <= 0 || sources <= 0 || articleCount <= 0) return false;
+  if(raw >= MIN_REGION_RAW) return true;
+  return sources >= MIN_REGION_SOURCES_FOR_WEAK_SIGNAL;
+}
 const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null });
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6500;
@@ -366,7 +381,7 @@ function analyzeArticles(articles){
     const terms = [...regionTerms[r.name]].slice(0,8);
     const freshness = round1(regionFreshness[r.name] || 0);
 
-    if(raw <= 0 || sources <= 0 || articleCount <= 0){
+    if(!hasSufficientRegionEvidence(raw, sources, articleCount)){
       return { name:r.name, score:0, change:'+0', trend:'No verified signal', count:0, raw:0, sources:0, articles:0, terms:[], freshness:0, breakdown:{ signal:0, source:0, coverage:0, freshness:0 } };
     }
 
