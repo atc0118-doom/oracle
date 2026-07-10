@@ -10,7 +10,6 @@ const fallback = {
   state: 'WATCH',
   confidence: 74,
   evidenceStrength: 'LIMITED',
-  dataMode: 'fallback',
   updatedAt: new Date().toISOString(),
   sourceHealth: 88,
   aiMode: 'RULE BASED',
@@ -141,17 +140,41 @@ function renderEvidence(data){
   if($('evidenceChecks')) $('evidenceChecks').textContent = `${checks} CROSS CHECKS`;
   if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
   if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
-  if($('evidenceSourceList')) {
-    const mode = data.dataMode || ev.dataMode || 'live';
-    const factor = ev.factors ? `<small class="evidence-factors">Mode: ${escapeHtml(mode.toUpperCase())} · Diversity ${ev.factors.sourceDiversity}% · Freshness ${ev.factors.freshness}% · Completeness ${ev.factors.completeness}% · Agreement ${ev.factors.consensus}%</small>` : '';
-    const status = Array.isArray(ev.status) && ev.status.length ? `<small class="evidence-factors">${ev.status.slice(0,5).map(x=>`${escapeHtml(x.name)}:${escapeHtml(x.status)}`).join(' · ')}</small>` : '';
-    $('evidenceSourceList').innerHTML = (sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>') + factor + status;
-  }
+  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>';
 }
 
 function escapeHtml(str=''){
   return String(str).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 }
+
+function escapeAttr(str=''){
+  return escapeHtml(str).replace(/'/g,'&#39;');
+}
+
+function ensureRegionEvidenceModal(){
+  let modal = $('regionEvidenceModal');
+  if(modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'regionEvidenceModal';
+  modal.className = 'region-evidence-modal';
+  modal.innerHTML = `<div class="region-evidence-card" role="dialog" aria-modal="true" aria-labelledby="regionEvidenceTitle"><button class="region-evidence-close" type="button" aria-label="Close">×</button><div class="region-evidence-kicker">REGION EVIDENCE</div><h3 id="regionEvidenceTitle">Region</h3><div id="regionEvidenceMeta" class="region-evidence-meta"></div><div id="regionEvidenceList" class="region-evidence-list"></div><p class="region-evidence-note">Articles are source-bound public signals. Contribution values explain relative input strength; they are not probabilities.</p></div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('.region-evidence-close').addEventListener('click', ()=>modal.classList.remove('open'));
+  modal.addEventListener('click', e=>{ if(e.target === modal) modal.classList.remove('open'); });
+  return modal;
+}
+
+function showRegionEvidence(regionName){
+  const modal = ensureRegionEvidenceModal();
+  const data = currentData?.regionEvidence?.[regionName];
+  const region = (currentData?.regions || []).find(r=>r.name === regionName);
+  $('regionEvidenceTitle').textContent = regionName;
+  $('regionEvidenceMeta').innerHTML = data ? `<span>${Math.round(data.score || region?.score || 0)} regional risk</span><span>${Number(data.signals || 0).toFixed(1)} signals</span><span>${data.sources || 0} sources</span>` : `<span>${Math.round(region?.score || 0)} regional risk</span><span>Evidence mapping unavailable</span>`;
+  const items = data?.evidence || [];
+  $('regionEvidenceList').innerHTML = items.length ? items.map(item=>`<a class="region-evidence-item" href="${escapeAttr(item.url || '#')}" target="_blank" rel="noopener noreferrer"><div class="region-evidence-item-head"><b>${escapeHtml(item.source || 'Source')}</b><strong>+${Number(item.contribution || 0).toFixed(1)}</strong></div><p>${escapeHtml(item.title || 'Public signal')}</p><div class="region-evidence-tags"><span>${escapeHtml(item.primaryDriver || 'General')}</span><span>${Number(item.signals || 0).toFixed(1)} signal</span></div></a>`).join('') : '<p class="region-evidence-empty">No source-bound article evidence is currently available for this region.</p>';
+  modal.classList.add('open');
+}
+
 
 function shortIntelText(str='', max=165){
   const clean = String(str || '').replace(/\s+/g,' ').trim();
@@ -174,18 +197,8 @@ function renderContributors(contributors){
   const el = $('contributors');
   if(!el) return;
   const list = (contributors || []).slice(0,5);
-  el.innerHTML = list.map((c,i)=>{
-    const impact = Math.round(c.impact || 0);
-    const signals = c.signals !== undefined ? `${Number(c.signals).toFixed(1)} signals` : `${Math.round(c.share || 0)}% signal share`;
-    const sources = c.sources !== undefined ? `${c.sources} sources` : 'source mix tracked';
-    return `
-    <div class="contributor-row">
-      <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${signals} · ${sources}</span></div>
-      <strong>+${impact}<small> pts</small></strong>
-      <div class="rankbar"><i style="width:${clamp(impact * 4,0,100)}%"></i></div>
-    </div>`;
-  }).join('') || '<p>Contributor data is being calculated.</p>';
+  el.innerHTML = list.map((c,i)=>`<button class="contributor-row evidence-trigger" type="button" data-region="${escapeAttr(c.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${Number(c.signals || 0).toFixed(1)} signals · ${c.sources || 0} sources</span></div><strong>+${Math.round(c.impact || 0)}</strong><div class="rankbar"><i style="width:${clamp(c.share || c.score || 0,0,100)}%"></i></div></button>`).join('') || '<p>Contributor data is being calculated.</p>';
+  el.querySelectorAll('[data-region]').forEach(btn=>btn.addEventListener('click', ()=>showRegionEvidence(btn.dataset.region)));
 }
 
 function renderScoreBridge(bridge){
@@ -196,50 +209,31 @@ function renderScoreBridge(bridge){
   const duplicateNoise = Number(bridge.duplicateNoise ?? 0);
   const globalNormalization = Number(bridge.globalNormalization ?? 0);
   const final = Number(bridge.final ?? currentData?.score ?? 0);
-  const line = (label, val, note='') => `<div class="bridge-line"><span>${label}${note ? `<small>${escapeHtml(note)}</small>` : ''}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
-  const duplicate = bridge.duplicate || {};
-  const global = bridge.global || {};
-  const stabilityDetails = Array.isArray(bridge.stabilityDetails) ? bridge.stabilityDetails : [];
-  const formula = Array.isArray(bridge.formula) ? bridge.formula : [];
-  const stabilityNote = stabilityDetails.length ? stabilityDetails.map(x=>`${x.label} ${Number(x.value)>=0?'+':''}${Number(x.value).toFixed(1)}`).join(' / ') : 'Primary driver and containment checks';
-  const duplicateNote = duplicate.note || 'Duplicate handling produced no reduction for this cycle.';
-  const globalNote = global.reason || 'Cross-region normalization based on active regional contributor distribution.';
+  const line = (label, val) => `<div class="bridge-line"><span>${label}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
   el.innerHTML = `
     <div class="bridge-main"><span>RAW</span><b>${raw.toFixed(1)}</b><em>→</em><span>INDEX</span><b>${Math.round(final)}</b></div>
-    ${line('Stability adjustment', stability, stabilityNote)}
-    ${line('Duplicate / noise reduction', duplicateNoise, duplicateNote)}
-    ${line('Global synchronization', globalNormalization, globalNote)}
-    <div class="formula-box">
-      <b>WHY ${Math.round(final)}?</b>
-      <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
-      ${formula.length ? formula.map(f=>`<div class="formula-line"><span>${escapeHtml(f.label)}</span><strong>${Number(f.value)>=0 && f.label !== 'Final index' ? '+' : ''}${f.label === 'Final index' ? Math.round(f.value) : Number(f.value).toFixed(1)}</strong><small>${escapeHtml(f.note || '')}</small></div>`).join('') : ''}
-    </div>
+    ${line('Stability adjustment', stability)}
+    ${line('Duplicate / noise reduction', duplicateNoise)}
+    ${line('Global synchronization', globalNormalization)}
+    <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
   `;
 }
 
 function renderDrivers(drivers){
-  const evidence = currentData?.driverEvidence || {};
   const entries = Object.entries(drivers);
-  $('drivers').innerHTML = entries.map(([k,v])=>{
-    const ev = evidence[k] || {};
-    const sub = ev.basis ? `<small>${escapeHtml(ev.basis)} · +${Number(ev.contribution||0).toFixed(1)} pts</small>` : `<small>Evidence score, not probability</small>`;
-    return `<div class="driver driver-evidence"><span>${k}${sub}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>`;
-  }).join('');
+  $('drivers').innerHTML = entries.map(([k,v])=>`
+    <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
+  `).join('');
 }
 function renderRegions(regions){
-  $('regions').innerHTML = regions.slice(0,5).map((r,i)=>`
-    <div class="rank">
-      <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
-      <div><div class="rankname">${r.name}</div><div class="rankmeta">Regional risk · ${r.trend || 'Watch'} ${r.change ? `• 24h ${r.change}` : ''}</div></div>
-      <div class="rankscore">${Math.round(r.score)}</div>
-      <div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div>
-    </div>
-  `).join('');
+  const el = $('regions');
+  el.innerHTML = regions.slice(0,5).map((r,i)=>`<button class="rank evidence-trigger" type="button" data-region="${escapeAttr(r.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><div class="rankname">${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(r.trend || 'Watch')} ${r.change ? `• ${escapeHtml(r.change)}` : ''} · ${Number(r.signals || 0).toFixed(1)} signals · ${r.sources || 0} sources</div></div><div class="rankscore">${Math.round(r.score)}</div><div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div></button>`).join('');
+  el.querySelectorAll('[data-region]').forEach(btn=>btn.addEventListener('click', ()=>showRegionEvidence(btn.dataset.region)));
 }
 function renderTimeline(timeline){
   const list = (timeline || []).slice(0,5);
   $('timelineCount').textContent = `${list.length} SIGNALS`;
-  $('timeline').innerHTML = list.map(t=>`<div class="timeline-row"><time>${t.time}</time><p>${t.text}</p></div>`).join('');
+  $('timeline').innerHTML = list.map(t=>{ const tags=[...(t.regions||[]).slice(0,1),...(t.drivers||[]).slice(0,1)]; const tagHtml=tags.map(tag=>`<span>${escapeHtml(tag)}</span>`).join(''); const body=`<div><div class="timeline-tags">${tagHtml}</div><p>${escapeHtml(t.text||'')}</p></div>`; return t.url ? `<a class="timeline-row timeline-link" href="${escapeAttr(t.url)}" target="_blank" rel="noopener noreferrer"><time>${escapeHtml(t.time||'')}</time>${body}</a>` : `<div class="timeline-row"><time>${escapeHtml(t.time||'')}</time>${body}</div>`; }).join('');
 }
 function renderMetrics(m){
   $('metricConflicts').textContent = m.conflicts || '7';
