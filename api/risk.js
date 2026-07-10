@@ -1,8 +1,13 @@
+// NOTE: terms must not be short/generic words that plausibly appear in other
+// regions' headlines (e.g. bare "strait" also matches "Strait of Hormuz",
+// bare "maritime" matches unrelated shipping stories). Prefer multi-word or
+// region-specific phrases so a single keyword can't silently inflate an
+// unrelated region's score.
 const REGION_KEYWORDS = [
-  { name: 'Ukraine', terms: ['ukraine','kyiv','kiev','donetsk','kharkiv','zaporizhzhia','russia','crimea'] },
-  { name: 'Taiwan Strait', terms: ['taiwan','taipei','strait','pla','china military','chinese military'] },
-  { name: 'Middle East', terms: ['iran','israel','gaza','hamas','hezbollah','red sea','houthi','lebanon','syria'] },
-  { name: 'South China Sea', terms: ['south china sea','philippines','spratly','scarborough','maritime'] },
+  { name: 'Ukraine', terms: ['ukraine','kyiv','kiev','donetsk','kharkiv','zaporizhzhia','russian forces','russian military','russia-ukraine','crimea'] },
+  { name: 'Taiwan Strait', terms: ['taiwan','taipei','taiwan strait','cross-strait','pla','china military','chinese military'] },
+  { name: 'Middle East', terms: ['iran','israel','gaza','hamas','hezbollah','red sea','houthi','lebanon','syria','strait of hormuz','hormuz'] },
+  { name: 'South China Sea', terms: ['south china sea','philippines','spratly','scarborough','west philippine sea','chinese coast guard'] },
   { name: 'Korea', terms: ['north korea','south korea','pyongyang','seoul'] },
   { name: 'Global Cyber', terms: ['cyber','hack','malware','ransomware','data breach','ddos'] }
 ];
@@ -285,7 +290,11 @@ function analyzeArticles(articles){
     let regTotal = 0;
     const regs = {};
     for(const r of REGION_KEYWORDS){
-      const matchedTerms = r.terms.filter(term=>titleText.includes(term));
+      const matchedTerms = r.terms.filter(term=>{
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp('\\b' + escaped.replace(/\s+/g,'\\s+') + '\\b', 'i');
+        return re.test(titleText);
+      });
       const hits = countOccurrences(titleText, r.terms);
       if(hits){
         const val = Math.min(hits, 5) * w;
@@ -859,7 +868,11 @@ function buildScoreBridge(analyzed){
 
 function classifyTimelineArticle(article){
   const title = String(article?.title || '').toLowerCase();
-  const regions = REGION_KEYWORDS.filter(r=>r.terms.some(term=>title.includes(term))).map(r=>r.name);
+  const regions = REGION_KEYWORDS.filter(r=>r.terms.some(term=>{
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('\\b' + escaped.replace(/\s+/g,'\\s+') + '\\b', 'i');
+    return re.test(title);
+  })).map(r=>r.name);
   const drivers = Object.entries(CATEGORY_KEYWORDS).filter(([,terms])=>terms.some(term=>title.includes(term))).map(([name])=>name);
   return { regions:regions.slice(0,3), drivers:drivers.slice(0,3), primaryRegion:regions[0] || 'Global', primaryDriver:drivers[0] || 'General' };
 }
