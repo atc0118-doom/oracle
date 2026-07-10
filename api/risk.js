@@ -261,6 +261,7 @@ function analyzeArticles(articles){
   const regionArticles = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,0]));
   const regionTerms = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,new Set()]));
   const regionFreshness = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,0]));
+  const regionEvidenceMap = Object.fromEntries(REGION_KEYWORDS.map(r=>[r.name,[]]));
   const articleScores = [];
 
   for(const a of list){
@@ -309,7 +310,27 @@ function analyzeArticles(articles){
     const sourceBoost = /reuters|ap news|associated press|bbc|npr|al jazeera|guardian|cnbc/i.test(a.source || '') ? 1.8 : 0;
     const freshness = freshnessWeight(a);
     const eventScore = (catTotal * 1.15 + regTotal * 1.35 + sourceBoost) * freshness;
-    articleScores.push({ article:a, score:eventScore, freshness, cats, regs });
+    const primaryDriver = Object.entries(cats).sort((x,y)=>y[1]-x[1])[0]?.[0] || 'General';
+    const matchedRegions = Object.keys(regs);
+
+    for(const regionName of matchedRegions){
+      const regionalHits = Number(regs[regionName] || 0);
+      const regionalContribution = round1((regionalHits * w * 1.35 + sourceBoost * 0.5) * freshness);
+      regionEvidenceMap[regionName].push({
+        title:a.title,
+        source:a.source || 'Source',
+        url:a.url || '#',
+        seen:a.seen || '',
+        sourceType:a.sourceType || 'public-reporting',
+        primaryDriver,
+        drivers:Object.keys(cats),
+        signals:round1(regionalHits * w),
+        contribution:regionalContribution,
+        freshness:round1(freshness)
+      });
+    }
+
+    articleScores.push({ article:a, score:eventScore, freshness, cats, regs, primaryDriver, matchedRegions });
   }
 
   const maxDriverRaw = Math.max(1, ...Object.values(driverRaw));
@@ -384,6 +405,24 @@ function analyzeArticles(articles){
     };
   });
 
+  const regionEvidence = Object.fromEntries(
+    regions.map(r=>{
+      const items = (regionEvidenceMap[r.name] || [])
+        .sort((a,b)=>b.contribution-a.contribution)
+        .slice(0,6);
+      return [r.name, {
+        region:r.name,
+        score:r.score,
+        trend:r.trend,
+        signals:round1(r.raw || r.count || 0),
+        sources:r.sources || 0,
+        articles:r.articles || 0,
+        terms:r.terms || [],
+        evidence:items
+      }];
+    })
+  );
+
   const adjustment = stabilityAdjustment(drivers, regions, total, contributors);
   const duplicateReduction = duplicateNoiseReduction(list);
   const globalNormalization = globalSynchronizationAdjustment(contributors, drivers);
@@ -392,7 +431,7 @@ function analyzeArticles(articles){
   const confidence = clamp(Math.round(52 + Math.min(list.length,80)*0.18 + sourceDiversity*3 + (process.env.OPENAI_API_KEY ? 5 : 0)), 45, 92);
   const top = pickTopEventFromScores(articleScores, regions);
 
-  return { drivers, driverEvidence, regions, raw, adjustment, duplicateReduction, globalNormalization, final, confidence, top, total, contributors, driverRaw, regionRaw };
+  return { drivers, driverEvidence, regions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, final, confidence, top, total, contributors, driverRaw, regionRaw };
 }
 
 function duplicateNoiseReduction(articles=[]){
@@ -818,6 +857,13 @@ function buildScoreBridge(analyzed){
   };
 }
 
+function classifyTimelineArticle(article){
+  const title = String(article?.title || '').toLowerCase();
+  const regions = REGION_KEYWORDS.filter(r=>r.terms.some(term=>title.includes(term))).map(r=>r.name);
+  const drivers = Object.entries(CATEGORY_KEYWORDS).filter(([,terms])=>terms.some(term=>title.includes(term))).map(([name])=>name);
+  return { regions:regions.slice(0,3), drivers:drivers.slice(0,3), primaryRegion:regions[0] || 'Global', primaryDriver:drivers[0] || 'General' };
+}
+
 function buildPayload(analyzed, articles, llm, meta={}){
   const score = analyzed.final;
   const state = stateFromScore(score);
@@ -830,7 +876,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
       return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
     })
     .slice(0,5)
-    .map((a,i)=>({ time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting' }));
+    .map((a,i)=>{ const cls = classifyTimelineArticle(a); return { time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting', ...cls }; });
   const aiOk = Boolean(llm && !llm.error);
   const corpus = (articles||[]).map(a=>a.title).join(' ');
   const outlookLabel = aiOk
@@ -851,6 +897,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
     confidence: analyzed.confidence,
     sourceHealth: sourceHealthScore(articles, meta),
     contributors: analyzed.contributors || [],
+    regionEvidence: analyzed.regionEvidence || {},
     facts: buildFacts(articles, llm, meta),
     outlook24h: outlookLabel,
     outlookText: alignedOutlookText(
