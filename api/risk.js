@@ -239,6 +239,18 @@ function articleWeight(article){
   return w;
 }
 
+function freshnessWeight(article){
+  const seen = new Date(article?.seen || 0).getTime();
+  if(!seen || Number.isNaN(seen)) return 0.72;
+
+  const ageHours = Math.max(0, (Date.now() - seen) / 3600000);
+  if(ageHours <= 2) return 1.18;
+  if(ageHours <= 6) return 1.00;
+  if(ageHours <= 12) return 0.84;
+  if(ageHours <= 24) return 0.66;
+  return 0.42;
+}
+
 function analyzeArticles(articles){
   const list = Array.isArray(articles) ? articles : [];
   const total = Math.max(list.length, 1);
@@ -295,7 +307,9 @@ function analyzeArticles(articles){
     }
 
     const sourceBoost = /reuters|ap news|associated press|bbc|npr|al jazeera|guardian|cnbc/i.test(a.source || '') ? 1.8 : 0;
-    articleScores.push({ article:a, score: catTotal*1.15 + regTotal*1.35 + sourceBoost, cats, regs });
+    const freshness = freshnessWeight(a);
+    const eventScore = (catTotal * 1.15 + regTotal * 1.35 + sourceBoost) * freshness;
+    articleScores.push({ article:a, score:eventScore, freshness, cats, regs });
   }
 
   const maxDriverRaw = Math.max(1, ...Object.values(driverRaw));
@@ -332,7 +346,8 @@ function analyzeArticles(articles){
     const sourceComponent = Math.min(sources, 6) * 3;
     const coverageComponent = Math.min(articleCount, 8) * 1.5;
     const freshnessComponent = Math.min(freshness, 6) * 1.2;
-    const score = clamp(Math.round(8 + signalComponent + sourceComponent + coverageComponent + freshnessComponent), 8, 88);
+    const diversityComponent = Math.min(terms.length, 5) * 0.8;
+    const score = clamp(Math.round(8 + signalComponent + sourceComponent + coverageComponent + freshnessComponent + diversityComponent), 8, 88);
 
     return {
       name:r.name,
@@ -345,7 +360,7 @@ function analyzeArticles(articles){
       articles:articleCount,
       terms,
       freshness,
-      breakdown:{ signal:round1(signalComponent), source:round1(sourceComponent), coverage:round1(coverageComponent), freshness:round1(freshnessComponent) }
+      breakdown:{ signal:round1(signalComponent), source:round1(sourceComponent), coverage:round1(coverageComponent), freshness:round1(freshnessComponent), diversity:round1(diversityComponent) }
     };
   }).sort((a,b)=>b.score-a.score).slice(0,5);
 
@@ -621,6 +636,32 @@ function normalizeOutlook(v=''){
   return 'STABLE';
 }
 
+function outlookFallback(label, topRegion='Global'){
+  if(label === 'ESCALATING'){
+    return `Available public signals indicate increasing pressure across ${topRegion}. Additional verified developments could raise the risk index further.`;
+  }
+  if(label === 'DE-ESCALATING'){
+    return `Recent public signals indicate easing pressure across ${topRegion}, although active monitoring remains necessary.`;
+  }
+  if(label === 'WATCH'){
+    return `Current public signals remain elevated across ${topRegion}. No broad synchronized global escalation is confirmed.`;
+  }
+  return `Current public signals remain broadly stable. No major synchronized global escalation is confirmed.`;
+}
+
+function alignedOutlookText(label, aiText='', topRegion='Global', corpus=''){
+  const fallback = outlookFallback(label, topRegion);
+  const text = safeIntelText(aiText, fallback, corpus);
+  const lower = text.toLowerCase();
+
+  if(label === 'ESCALATING' && !/(increasing|rising|escalat|elevated pressure|upward)/.test(lower)) return fallback;
+  if(label === 'DE-ESCALATING' && !/(easing|declining|de-escalat|reducing|cooling)/.test(lower)) return fallback;
+  if(label === 'WATCH' && !/(watch|elevated|monitor|pressure)/.test(lower)) return fallback;
+  if(label === 'STABLE' && !/(stable|limited|no major|broadly stable)/.test(lower)) return fallback;
+
+  return text;
+}
+
 function safeList(list, topRegion, analyzed){
   const arr = Array.isArray(list) ? list : [];
   const cleaned = arr.map(x=>clean(String(x))).filter(Boolean).slice(0,5);
@@ -782,9 +823,19 @@ function buildPayload(analyzed, articles, llm, meta={}){
   const state = stateFromScore(score);
   const top = analyzed.top || { title:'Public signals under monitoring', source:'GDELT', url:'https://www.gdeltproject.org/' };
   const topRegion = analyzed.regions[0]?.name || 'Global';
-  const timeline = articles.slice(0,5).map((a,i)=>({ time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}` }));
+  const timeline = [...articles]
+    .sort((a,b)=>{
+      const ta = new Date(a?.seen || 0).getTime();
+      const tb = new Date(b?.seen || 0).getTime();
+      return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+    })
+    .slice(0,5)
+    .map((a,i)=>({ time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting' }));
   const aiOk = Boolean(llm && !llm.error);
   const corpus = (articles||[]).map(a=>a.title).join(' ');
+  const outlookLabel = aiOk
+    ? normalizeOutlook(llm.outlook24h)
+    : (score >= 55 ? 'WATCH' : 'STABLE');
 
   return {
     ok:true,
@@ -801,8 +852,13 @@ function buildPayload(analyzed, articles, llm, meta={}){
     sourceHealth: sourceHealthScore(articles, meta),
     contributors: analyzed.contributors || [],
     facts: buildFacts(articles, llm, meta),
-    outlook24h: aiOk ? normalizeOutlook(llm.outlook24h) : (score >= 50 ? 'WATCH' : 'STABLE'),
-    outlookText: aiOk ? safeIntelText(llm.outlookText, 'Available public signals suggest conditions should continue to be monitored over the next 24 hours.', corpus) : 'Available public signals suggest conditions should continue to be monitored over the next 24 hours.',
+    outlook24h: outlookLabel,
+    outlookText: alignedOutlookText(
+      outlookLabel,
+      aiOk ? llm.outlookText : '',
+      topRegion,
+      corpus
+    ),
     keyDrivers: aiOk ? safeList(llm.keyDrivers, topRegion, analyzed) : fallbackDrivers(topRegion, analyzed),
     watchNext: aiOk ? safeList(llm.watchNext, topRegion, analyzed) : fallbackWatchNext(topRegion),
     sourceConfidence: aiOk ? normalizeSourceConfidence(llm.sourceConfidence, articles, meta) : normalizeSourceConfidence(null, articles, meta),
