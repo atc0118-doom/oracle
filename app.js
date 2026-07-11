@@ -441,19 +441,12 @@ function generatePost(lang='en'){
 }
 function setup(){
   const params = new URLSearchParams(location.search);
-  // FIX: previously this compared the URL param directly against a hardcoded
-  // string ('doom') living in this client-side file — anyone viewing source
-  // could read the "password" and unlock the panel. Now the token is sent to
-  // a serverless endpoint that checks it against a server-only env var
-  // (ADMIN_TOKEN), which never ships to the browser. If no token is present
-  // in the URL, we don't even make the request.
-  const adminToken = params.get('admin');
-  if(adminToken){
-    fetch(`/api/admin-auth?token=${encodeURIComponent(adminToken)}`)
-      .then(r => r.json())
-      .then(j => { if(j?.ok) $('adminPanel')?.classList.add('open'); })
-      .catch(()=>{ /* fail closed: panel stays hidden on any error */ });
-  }
+  // Reverted per request: no ADMIN_TOKEN / server round-trip needed anymore.
+  // Any `?admin=...` (any value) in the URL unlocks the panel client-side.
+  // NOTE: this means anyone who has or guesses this URL can open the admin
+  // panel — there is no real access control here. Acceptable for a personal,
+  // non-commercial project as long as the URL itself isn't shared publicly.
+  if(params.get('admin')) $('adminPanel')?.classList.add('open');
   $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
   $('closeModal').addEventListener('click', ()=> $('scoreModal').classList.remove('open'));
   $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
