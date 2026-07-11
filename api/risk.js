@@ -11,9 +11,16 @@
 
 const REGION_KEYWORDS = [
   { name: 'Ukraine', terms: ['ukraine','kyiv','kiev','donetsk','kharkiv','zaporizhzhia','russia','crimea'] },
-  { name: 'Taiwan Strait', terms: ['taiwan','taipei','strait','pla','china military','chinese military'] },
-  { name: 'Middle East', terms: ['iran','israel','gaza','hamas','hezbollah','red sea','houthi','lebanon','syria'] },
-  { name: 'South China Sea', terms: ['south china sea','philippines','spratly','scarborough','maritime'] },
+  // FIX: removed the bare word 'strait' from Taiwan Strait matching. A generic
+  // term like "strait" also appears in unrelated phrases such as "Strait of
+  // Hormuz" (Middle East), which was causing those headlines to be mislabeled
+  // as Taiwan Strait signals. Now only Taiwan-specific strait phrasing counts.
+  { name: 'Taiwan Strait', terms: ['taiwan','taipei','taiwan strait','strait of taiwan','formosa strait','pla','china military','chinese military'] },
+  { name: 'Middle East', terms: ['iran','israel','gaza','hamas','hezbollah','red sea','houthi','lebanon','syria','strait of hormuz','hormuz'] },
+  // FIX: removed the bare word 'maritime' from South China Sea matching for the
+  // same reason — it's a generic term that also applies to Middle East/Hormuz
+  // shipping stories and would mislabel them.
+  { name: 'South China Sea', terms: ['south china sea','philippines','spratly','scarborough','west philippine sea'] },
   { name: 'Korea', terms: ['north korea','south korea','pyongyang','seoul'] },
   { name: 'Global Cyber', terms: ['cyber','hack','malware','ransomware','data breach','ddos'] }
 ];
