@@ -331,8 +331,20 @@ function renderCalc(data){
     <div class="calc-total"><span>GLOBAL SYNC</span><strong>${Number(calc.globalNormalization || 0).toFixed(1)}</strong></div>
     <div class="calc-total"><span>TOTAL ADJUSTMENT</span><strong>${Number(containment).toFixed(1)}</strong></div>
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
+    ${renderAdjustmentReasons(calc.adjustmentReasons || [])}
     ${renderReasoning(calc.reasoning || [])}
   `;
+}
+function renderAdjustmentReasons(reasons){
+  if(!Array.isArray(reasons) || !reasons.length) return '';
+  // FIX (transparency): previously the -1.0 / -3.0 / +0.0 adjustment numbers
+  // shown in "WHY SCORE?" had no explanation attached — the person had to
+  // trust the number with no way to see which rule produced it. Each reason
+  // string here corresponds to one specific if/else branch that actually
+  // fired in stabilityAdjustment / duplicateNoiseReduction /
+  // globalSynchronizationAdjustment on the backend, phrased in plain language.
+  return `<div class="reasoning-title">WHY THESE ADJUSTMENTS</div>` +
+    `<ul class="adjustment-reasons">${reasons.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ul>`;
 }
 function renderReasoning(reasoning){
   if(!Array.isArray(reasoning) || !reasoning.length) return '';
@@ -423,7 +435,19 @@ function generatePost(lang='en'){
 
 function setup(){
   const params = new URLSearchParams(location.search);
-  if(params.get('admin') === 'doom') $('adminPanel')?.classList.add('open');
+  // FIX: previously this compared the URL param directly against a hardcoded
+  // string ('doom') living in this client-side file — anyone viewing source
+  // could read the "password" and unlock the panel. Now the token is sent to
+  // a serverless endpoint that checks it against a server-only env var
+  // (ADMIN_TOKEN), which never ships to the browser. If no token is present
+  // in the URL, we don't even make the request.
+  const adminToken = params.get('admin');
+  if(adminToken){
+    fetch(`/api/admin-auth?token=${encodeURIComponent(adminToken)}`)
+      .then(r => r.json())
+      .then(j => { if(j?.ok) $('adminPanel')?.classList.add('open'); })
+      .catch(()=>{ /* fail closed: panel stays hidden on any error */ });
+  }
   $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
   $('closeModal').addEventListener('click', ()=> $('scoreModal').classList.remove('open'));
   $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
