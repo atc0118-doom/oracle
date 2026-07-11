@@ -1017,6 +1017,10 @@ function buildPayload(analyzed, articles, llm, meta={}){
     // FIX: dataStatus can now surface a distinct, unambiguous BASELINE state
     // instead of being lumped in with generic "CACHED / DEGRADED".
     dataStatus: isBaseline ? 'BASELINE — NOT LIVE' : (meta.degraded ? 'CACHED / DEGRADED' : 'LIVE SOURCES'),
+    // FIX: expose the actual source-fetch cache duration so the frontend can
+    // state it accurately instead of hardcoding a number that could drift out
+    // of sync with CACHE_TTL_MS.
+    cacheTtlMinutes: Math.round(CACHE_TTL_MS / 60000),
     isBaseline,
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
@@ -1097,6 +1101,7 @@ function fallbackPayload(error){
   return {
     ok:true, mode:'fallback', isBaseline:true, error, aiMode:'RULE BASED', updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:20, sourceHealth:0,
     dataStatus:'FALLBACK — NOT LIVE',
+    cacheTtlMinutes: Math.round(CACHE_TTL_MS / 60000),
     brief:'ORACLE encountered an error and has no live data. Showing conservative fallback values only.',
     assessment:'This is a fallback response due to an internal error. It does not reflect live monitoring.',
     scoreReason:'Fallback score is a fixed conservative placeholder because live source retrieval did not complete.',
