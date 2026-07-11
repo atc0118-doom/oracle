@@ -413,28 +413,46 @@ function generatePost(lang='en'){
   const d = currentData || fallback;
   const event = d.topEvent || fallback.topEvent;
   const regions = (d.regions || fallback.regions).slice(0,3);
-  const tags = dynamicTags(d, lang).join(' ');
   const score = d.score ?? fallback.score;
   const state = d.state || stateFromScore(score);
   const outlook = d.outlook24h ? `\n24H Outlook: ${d.outlook24h}` : '';
 
-  // Reverted per request: the disclaimer now lives in the X profile bio
-  // instead of being appended to every generated post. Post text is back to
-  // clean/unmodified.
+  // FIX (duplicate hashtags): the AI-generated post text (xPostGlobal /
+  // xPostJapanese) sometimes already contains hashtags of its own, since
+  // nothing stops the model from adding them even though a separate
+  // `hashtags` field was also requested. This function used to blindly
+  // append the full dynamicTags() list regardless, so any tag the AI text
+  // already included (e.g. #ORACLE) would show up twice in the final post.
+  // Now we drop any tag from the appended list that's already present
+  // (case-insensitive) in the base post text.
+  const dedupeTagsAgainstText = (text, tagList) => {
+    const lower = String(text || '').toLowerCase();
+    return tagList.filter(tag => !lower.includes(tag.toLowerCase()));
+  };
 
   if(lang === 'ja'){
-    if(d.xPostJapanese && typeof d.xPostJapanese === 'string') return `${d.xPostJapanese.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    if(d.xPostJapanese && typeof d.xPostJapanese === 'string'){
+      const base = d.xPostJapanese.trim();
+      const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
+      return `${base}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    }
     const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-    return `ORACLE | World Risk Intelligence\n\n\u4e16\u754c\u30ea\u30b9\u30af\u6307\u6570: ${score}\uff08${state}\uff09${outlook ? outlook.replace('24H Outlook:', '\n24\u6642\u9593\u898b\u901a\u3057:') : ''}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    const base = `ORACLE | World Risk Intelligence\n\n\u4e16\u754c\u30ea\u30b9\u30af\u6307\u6570: ${score}\uff08${state}\uff09${outlook ? outlook.replace('24H Outlook:', '\n24\u6642\u9593\u898b\u901a\u3057:') : ''}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.`;
+    const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
+    return `${base}\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
   }
 
   const aiPost = d.xPostGlobal || d.xPost;
   if(aiPost && typeof aiPost === 'string'){
-    return `${aiPost.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    const base = aiPost.trim();
+    const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
+    return `${base}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
   }
 
   const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${score} (${state})${outlook}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+  const base = `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${score} (${state})${outlook}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.`;
+  const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
+  return `${base}\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
 }
 function setup(){
   const params = new URLSearchParams(location.search);
