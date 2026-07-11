@@ -77,6 +77,7 @@ function render(data){
     ...((currentData.sourceConfidence && currentData.sourceConfidence.availableSources) || [])
   ]));
   renderEvidence(currentData);
+  renderDataSources(currentData);
   $('confidence').textContent = `EVIDENCE STRENGTH ${currentData.evidenceStrength || evidenceStrengthFromData(currentData)}`;
   $('confidenceBar').style.width = `${clamp(currentData.sourceHealth || currentData.confidence || 70,0,100)}%`;
   renderContributors(currentData.contributors || fallback.contributors || []);
@@ -163,6 +164,49 @@ function renderEvidence(data){
   if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
   if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
   if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = (sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>') + `<small class="evidence-definition">Reliability estimate reflects active feed coverage, source diversity, signal volume, and feed health. Cross checks indicate independent source groups, not fact-check verdicts.</small>`;
+}
+
+function renderDataSources(data){
+  const el = $('dataSourcesList');
+  if(!el) return;
+
+  // FIX: this panel used to be static HTML listing GDELT/Reuters/AP/BBC/NHK/
+  // USGS/NASA/MarineTraffic/FlightRadar24 as permanently "active" (green dot),
+  // even though the backend never calls NASA, MarineTraffic, or FlightRadar24
+  // at all, and Reuters/AP/BBC/NHK only ever appear as the *origin* of an
+  // aggregated article (via GDELT/Google News), not as separately-fetched
+  // feeds. That mismatch is exactly what made this panel contradict the
+  // "SOURCE CONFIDENCE" section, which correctly showed some of those same
+  // names as "LIMITED". Now this panel is built only from what the current
+  // payload actually reports.
+  const available = uniqueSourceNames((data.sourceConfidence && data.sourceConfidence.availableSources) || []);
+  const limited = uniqueSourceNames((data.sourceConfidence && data.sourceConfidence.limitedSources) || []);
+  const evidenceSources = uniqueSourceNames((data.evidence && data.evidence.sources) || []);
+  const verified = uniqueSourceNames(data.verifiedSources || []);
+
+  const seen = new Set();
+  const badges = [];
+
+  const addBadge = (name, status)=>{
+    const key = name.toLowerCase();
+    if(seen.has(key)) return;
+    seen.add(key);
+    badges.push({ name, status });
+  };
+
+  available.forEach(s=>addBadge(s,'active'));
+  evidenceSources.forEach(s=>addBadge(s,'active'));
+  verified.forEach(s=>addBadge(s,'active'));
+  limited.forEach(s=>addBadge(s,'limited'));
+
+  if(!badges.length){
+    el.innerHTML = '<em>No source status reported.</em>';
+    return;
+  }
+
+  el.innerHTML = badges.slice(0,12).map(b=>
+    `<b data-status="${b.status}">${escapeHtml(b.name)} <i></i></b>`
+  ).join('');
 }
 
 function escapeHtml(str=''){
