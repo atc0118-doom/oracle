@@ -71,11 +71,6 @@ function render(data){
   renderLists('keyDrivers', currentData.keyDrivers || fallback.keyDrivers);
   renderLists('watchNext', currentData.watchNext || fallback.watchNext);
   renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
-  renderVerifiedSources(uniqueSourceNames([
-    ...(currentData.verifiedSources || []),
-    ...((currentData.evidence && currentData.evidence.sources) || []),
-    ...((currentData.sourceConfidence && currentData.sourceConfidence.availableSources) || [])
-  ]));
   renderEvidence(currentData);
   renderDataSources(currentData);
   $('confidence').textContent = `EVIDENCE STRENGTH ${currentData.evidenceStrength || evidenceStrengthFromData(currentData)}`;
@@ -139,15 +134,6 @@ function renderSourceConfidence(sc){
   el.innerHTML = `${limitedHtml}<p>${escapeHtml(sc.note || 'Source status is being monitored.')}</p>`;
 }
 
-function renderVerifiedSources(sources){
-  const el = $('verifiedSources');
-  if(!el) return;
-  const list = Array.isArray(sources) ? sources.slice(0,8) : [];
-  el.innerHTML = list.length
-    ? list.map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('')
-    : '<em>No verified source list available</em>';
-}
-
 function renderEvidence(data){
   const ev = data.evidence || {};
   const sources = uniqueSourceNames([
@@ -194,17 +180,25 @@ function renderDataSources(data){
     badges.push({ name, status });
   };
 
+  // FIX: previously "active" sources were added first and "limited" sources
+  // last, then the whole list was capped with .slice(0,12). Whenever the
+  // active count happened to land at exactly the cap (as it did here), the
+  // limited/non-working sources — the most important thing to surface —
+  // were silently cut off, even though the SOURCE CONFIDENCE panel elsewhere
+  // on the same page correctly listed them as LIMITED. Limited sources are
+  // now added first so they can never be pushed out by the cap, and the cap
+  // itself is raised to give more headroom.
+  limited.forEach(s=>addBadge(s,'limited'));
   available.forEach(s=>addBadge(s,'active'));
   evidenceSources.forEach(s=>addBadge(s,'active'));
   verified.forEach(s=>addBadge(s,'active'));
-  limited.forEach(s=>addBadge(s,'limited'));
 
   if(!badges.length){
     el.innerHTML = '<em>No source status reported.</em>';
     return;
   }
 
-  el.innerHTML = badges.slice(0,12).map(b=>
+  el.innerHTML = badges.slice(0,16).map(b=>
     `<b data-status="${b.status}">${escapeHtml(b.name)} <i></i></b>`
   ).join('');
 }
