@@ -418,21 +418,27 @@ function generatePost(lang='en'){
   const state = d.state || stateFromScore(score);
   const outlook = d.outlook24h ? `\n24H Outlook: ${d.outlook24h}` : '';
 
+  // FIX: the on-page disclaimer banner only reaches people who visit the
+  // site itself. A tweet is often read standalone, without the link ever
+  // being opened, so the same "experimental, not verified" context needs to
+  // travel with the post text itself, not just live on the webpage.
+  const disclaimerEn = '(Experimental hobby project \u2014 heuristic scoring, not verified analysis. Not real intelligence.)';
+  const disclaimerJa = '(\u500b\u4eba\u306e\u8da3\u5473\u30d7\u30ed\u30b8\u30a7\u30af\u30c8\u3067\u3059\u3002\u6570\u5024\u306f\u30d2\u30e5\u30fc\u30ea\u30b9\u30c6\u30a3\u30c3\u30af\u306b\u3088\u308b\u7c21\u6613\u30b9\u30b3\u30a2\u3067\u3001\u691c\u8a3c\u6e08\u307f\u306e\u5206\u6790\u3067\u306f\u3042\u308a\u307e\u305b\u3093\u3002)';
+
   if(lang === 'ja'){
-    if(d.xPostJapanese && typeof d.xPostJapanese === 'string') return `${d.xPostJapanese.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    if(d.xPostJapanese && typeof d.xPostJapanese === 'string') return `${d.xPostJapanese.trim()}\n\n${disclaimerJa}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
     const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-    return `ORACLE | World Risk Intelligence\n\n世界リスク指数: ${score}（${state}）${outlook ? outlook.replace('24H Outlook:', '\n24時間見通し:') : ''}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    return `ORACLE | World Risk Intelligence\n\n\u4e16\u754c\u30ea\u30b9\u30af\u6307\u6570: ${score}\uff08${state}\uff09${outlook ? outlook.replace('24H Outlook:', '\n24\u6642\u9593\u898b\u901a\u3057:') : ''}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\n${disclaimerJa}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
   }
 
   const aiPost = d.xPostGlobal || d.xPost;
   if(aiPost && typeof aiPost === 'string'){
-    return `${aiPost.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    return `${aiPost.trim()}\n\n${disclaimerEn}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
   }
 
   const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${score} (${state})${outlook}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`; 
+  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${score} (${state})${outlook}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\n${disclaimerEn}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
 }
-
 function setup(){
   const params = new URLSearchParams(location.search);
   // FIX: previously this compared the URL param directly against a hardcoded
