@@ -910,7 +910,26 @@ function evidenceStrengthLabel(evidence, isBaseline){
 
 function topEventSummary(top, analyzed){
   const region = analyzed.regions?.find(r => (top?.title || '').toLowerCase().includes(r.name.split(' ')[0].toLowerCase()))?.name || analyzed.regions?.[0]?.name || 'global risk';
-  const primary = Object.entries(analyzed.drivers || {}).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'risk';
+
+  // FIX: this used to pick the single globally-dominant driver across ALL
+  // articles (Object.entries(analyzed.drivers)...) and attribute it to this
+  // specific top event, regardless of what that event's own headline was
+  // actually about. E.g. a clearly diplomatic headline ("US demands Iran
+  // publicly state...") was being labeled "contributes mainly to the
+  // military driver" purely because Military happened to be the largest
+  // driver overall that cycle. Now we look up this article's own matched
+  // categories (the same articleScores data timelineClassification uses)
+  // and only fall back to the global dominant driver if no per-article
+  // match exists.
+  const scores = Array.isArray(analyzed?.articleScores) ? analyzed.articleScores : [];
+  const match = scores.find(x =>
+    (top?.url && x?.article?.url === top.url) ||
+    (!top?.url && x?.article?.title === top?.title)
+  );
+  const primary = match?.primaryDriver
+    || Object.entries(analyzed.drivers || {}).sort((a,b)=>b[1]-a[1])[0]?.[0]
+    || 'risk';
+
   return `${top.source || 'Source'} report monitored as a ${region} signal; it contributes mainly to the ${primary.toLowerCase()} driver.`;
 }
 
