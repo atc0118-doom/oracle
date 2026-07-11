@@ -147,7 +147,15 @@ function renderEvidence(data){
     ...(data.verifiedSources || []),
     ...((data.sourceConfidence && data.sourceConfidence.availableSources) || [])
   ]);
-  const sourceCount = ev.sourceCount || sources.length || 1;
+  // FIX: the "N SOURCES" label used to come from the backend's own count
+  // (ev.sourceCount, capped at 10) while the badge list below it was a
+  // separately-deduplicated client-side array capped at 8 — two different
+  // numbers computed two different ways, so they could (and did) disagree,
+  // e.g. "9 SOURCES" label with only 8 badges actually shown. Now both the
+  // label and the badges are derived from the same displayed list, so they
+  // can never mismatch.
+  const displayedSources = sources.slice(0, 10);
+  const sourceCount = displayedSources.length || 1;
   const articleCount = ev.articleCount || data.articleCount || 0;
   const reliability = Math.round(ev.reliability || data.sourceHealth || 70);
   const checks = ev.crossChecks || Math.max(1, Math.min(3, sourceCount - 1));
@@ -155,7 +163,7 @@ function renderEvidence(data){
   if($('evidenceChecks')) $('evidenceChecks').textContent = `${checks} CROSS CHECKS`;
   if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
   if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
-  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = (sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>') + `<small class="evidence-definition">Reliability estimate reflects active feed coverage, source diversity, signal volume, and feed health. Cross checks indicate independent source groups, not fact-check verdicts.</small>`;
+  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = (displayedSources.map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>') + `<small class="evidence-definition">Reliability estimate reflects active feed coverage, source diversity, signal volume, and feed health. Cross checks indicate independent source groups, not fact-check verdicts.</small>`;
 }
 
 function renderDataSources(data){
