@@ -81,6 +81,12 @@ function render(data){
   const statusText = currentData.dataStatus || (currentData.mode === 'live' ? 'LIVE SOURCES' : currentData.mode === 'degraded' ? 'CACHED / DEGRADED' : 'BASELINE');
   if($('dataStatus')) $('dataStatus').textContent = statusText;
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
+  if($('cacheNote')){
+    const ttl = currentData.cacheTtlMinutes;
+    $('cacheNote').textContent = ttl
+      ? `Source data may be cached up to ${ttl} min`
+      : 'Source cache duration unknown';
+  }
 
   const e = currentData.topEvent || fallback.topEvent;
   $('eventSource').textContent = e.source || 'SOURCE';
