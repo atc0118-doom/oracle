@@ -1,17 +1,13 @@
-# ORACLE v9.0 Scoring Core
+ORACLE v13.2 Reliability Fix
 
-Changes:
-- Dynamic driver scoring from current article/category signals instead of fixed-looking template values.
-- TOP CONTRIBUTORS added so the global score shows which regions are actually driving the index.
-- SCORE BRIDGE added to explain Raw Score → Global Risk Index.
-- TOP EVENT summary is source-bound and tied to the selected article only.
-- 24H TIMELINE uses source time labels instead of fake minute offsets when timestamps are available.
-- AI Confidence wording replaced with Evidence Strength.
-- Reporting / Official / Data Feed separation retained.
+Files to overwrite:
+- api/risk.js
+- app.js
+- style.css
 
-Deploy:
-Upload all files to GitHub and redeploy on Vercel.
-
-
-## v13.2 Region Evidence Trace
-Click Hot Regions or Top Contributors to inspect source-bound evidence. Timeline items now show region and driver tags.
+Fixes:
+- Timeline tags now come from the exact article classification used by scoring.
+- Duplicate source badges are deduplicated and shown once.
+- Regions with 0 signals / 0 sources are excluded from rankings.
+- Reliability and cross-check labels now include plain-language definitions.
+- API exposes LIVE SOURCES / CACHED-DEGRADED / BASELINE status.

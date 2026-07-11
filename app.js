@@ -71,13 +71,19 @@ function render(data){
   renderLists('keyDrivers', currentData.keyDrivers || fallback.keyDrivers);
   renderLists('watchNext', currentData.watchNext || fallback.watchNext);
   renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
-  renderVerifiedSources(currentData.verifiedSources || fallback.verifiedSources || []);
+  renderVerifiedSources(uniqueSourceNames([
+    ...(currentData.verifiedSources || []),
+    ...((currentData.evidence && currentData.evidence.sources) || []),
+    ...((currentData.sourceConfidence && currentData.sourceConfidence.availableSources) || [])
+  ]));
   renderEvidence(currentData);
   $('confidence').textContent = `EVIDENCE STRENGTH ${currentData.evidenceStrength || evidenceStrengthFromData(currentData)}`;
   $('confidenceBar').style.width = `${clamp(currentData.sourceHealth || currentData.confidence || 70,0,100)}%`;
   renderContributors(currentData.contributors || fallback.contributors || []);
   renderScoreBridge(currentData.scoreBridge || fallback.scoreBridge || {});
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
+  const statusText = currentData.dataStatus || (currentData.mode === 'live' ? 'LIVE SOURCES' : currentData.mode === 'degraded' ? 'CACHED / DEGRADED' : 'BASELINE');
+  if($('dataStatus')) $('dataStatus').textContent = statusText;
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
 
   const e = currentData.topEvent || fallback.topEvent;
@@ -112,12 +118,24 @@ function renderLists(id, items){
   const list = Array.isArray(items) ? items.slice(0,5) : [];
   el.innerHTML = list.map(x=>`<li>${escapeHtml(x)}</li>`).join('') || '<li>Monitoring public signals.</li>';
 }
+function uniqueSourceNames(items=[]){
+  const seen = new Set();
+  return items.filter(Boolean).filter(name=>{
+    const key = String(name).trim().toLowerCase();
+    if(!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function renderSourceConfidence(sc){
   const el = $('sourceConfidence');
   if(!el) return;
-  const available = (sc.availableSources || []).slice(0,8).map(s=>`<b>${escapeHtml(s)}</b>`).join('');
-  const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em>${escapeHtml(s)}</em>`).join('');
-  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
+  const limited = uniqueSourceNames(sc.limitedSources || []).slice(0,5);
+  const limitedHtml = limited.length
+    ? `<div class="source-pillset">${limited.map(s=>`<em>LIMITED · ${escapeHtml(s)}</em>`).join('')}</div>`
+    : '';
+  el.innerHTML = `${limitedHtml}<p>${escapeHtml(sc.note || 'Source status is being monitored.')}</p>`;
 }
 
 function renderVerifiedSources(sources){
@@ -131,7 +149,11 @@ function renderVerifiedSources(sources){
 
 function renderEvidence(data){
   const ev = data.evidence || {};
-  const sources = Array.isArray(ev.sources) && ev.sources.length ? ev.sources : (data.verifiedSources || []);
+  const sources = uniqueSourceNames([
+    ...(Array.isArray(ev.sources) ? ev.sources : []),
+    ...(data.verifiedSources || []),
+    ...((data.sourceConfidence && data.sourceConfidence.availableSources) || [])
+  ]);
   const sourceCount = ev.sourceCount || sources.length || 1;
   const articleCount = ev.articleCount || data.articleCount || 0;
   const reliability = Math.round(ev.reliability || data.sourceHealth || 70);
@@ -140,7 +162,7 @@ function renderEvidence(data){
   if($('evidenceChecks')) $('evidenceChecks').textContent = `${checks} CROSS CHECKS`;
   if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
   if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
-  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>';
+  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = (sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>') + `<small class="evidence-definition">Reliability estimate reflects active feed coverage, source diversity, signal volume, and feed health. Cross checks indicate independent source groups, not fact-check verdicts.</small>`;
 }
 
 function escapeHtml(str=''){
@@ -196,7 +218,7 @@ function evidenceStrengthFromData(data){
 function renderContributors(contributors){
   const el = $('contributors');
   if(!el) return;
-  const list = (contributors || []).slice(0,5);
+  const list = (contributors || []).filter(c=>Number(c.signals || 0) > 0 && Number(c.sources || 0) > 0 && Number(c.score || 0) > 0).slice(0,5);
   el.innerHTML = list.map((c,i)=>`<button class="contributor-row evidence-trigger" type="button" data-region="${escapeAttr(c.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${Number(c.signals || 0).toFixed(1)} signals · ${c.sources || 0} sources</span></div><strong>+${Math.round(c.impact || 0)}</strong><div class="rankbar"><i style="width:${clamp(c.share || c.score || 0,0,100)}%"></i></div></button>`).join('') || '<p>Contributor data is being calculated.</p>';
   el.querySelectorAll('[data-region]').forEach(btn=>btn.addEventListener('click', ()=>showRegionEvidence(btn.dataset.region)));
 }
@@ -227,7 +249,9 @@ function renderDrivers(drivers){
 }
 function renderRegions(regions){
   const el = $('regions');
-  el.innerHTML = regions.slice(0,5).map((r,i)=>`<button class="rank evidence-trigger" type="button" data-region="${escapeAttr(r.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><div class="rankname">${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(r.trend || 'Watch')} ${r.change ? `• ${escapeHtml(r.change)}` : ''} · ${Number(r.signals || 0).toFixed(1)} signals · ${r.sources || 0} sources</div></div><div class="rankscore">${Math.round(r.score)}</div><div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div></button>`).join('');
+  const active = (regions || []).filter(r=>Number(r.score || 0) > 0 && Number(r.signals || 0) > 0 && Number(r.sources || 0) > 0).slice(0,5);
+  el.innerHTML = active.map((r,i)=>`<button class="rank evidence-trigger" type="button" data-region="${escapeAttr(r.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><div class="rankname">${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(r.trend || 'Watch')} ${r.change ? `• ${escapeHtml(r.change)}` : ''} · ${Number(r.signals || 0).toFixed(1)} signals · ${r.sources || 0} sources</div></div><div class="rankscore">${Math.round(r.score)}</div><div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div></button>`).join('');
+  if(!active.length) el.innerHTML = '<p class="no-active-regions">No verified regional activity in the current window.</p>';
   el.querySelectorAll('[data-region]').forEach(btn=>btn.addEventListener('click', ()=>showRegionEvidence(btn.dataset.region)));
 }
 function renderTimeline(timeline){
