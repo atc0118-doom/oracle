@@ -451,9 +451,13 @@ function analyzeArticles(articles){
     })
   );
 
-  const adjustment = stabilityAdjustment(drivers, activeRegions, total, contributors);
-  const duplicateReduction = duplicateNoiseReduction(list);
-  const globalNormalization = globalSynchronizationAdjustment(contributors, drivers);
+  const stability = stabilityAdjustment(drivers, activeRegions, total, contributors);
+  const duplicate = duplicateNoiseReduction(list);
+  const globalSync = globalSynchronizationAdjustment(contributors, drivers);
+  const adjustment = stability.value;
+  const duplicateReduction = duplicate.value;
+  const globalNormalization = globalSync.value;
+  const adjustmentReasons = [...stability.reasons, ...duplicate.reasons, ...globalSync.reasons];
   const final = clamp(Math.round(raw + adjustment + duplicateReduction + globalNormalization), 5, 92);
   const sourceDiversity = new Set(list.map(a=>a.source).filter(Boolean)).size;
   // FIX: confidence bump for AI no longer depends on whether OPENAI_API_KEY merely
@@ -463,27 +467,50 @@ function analyzeArticles(articles){
   const confidence = clamp(Math.round(52 + Math.min(list.length,80)*0.18 + sourceDiversity*3), 45, 87);
   const top = pickTopEventFromScores(articleScores, activeRegions);
 
-  return { drivers, driverEvidence, regions:activeRegions, inactiveRegions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, final, confidence, top, total, contributors, driverRaw, regionRaw };
+  return { drivers, driverEvidence, regions:activeRegions, inactiveRegions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, adjustmentReasons, final, confidence, top, total, contributors, driverRaw, regionRaw };
 }
+
+// FIX (transparency): these three adjustment functions used to return only a
+// number. The "WHY SCORE?" panel could show e.g. "Stability adjustment -1.0"
+// but had no way to say *why* -1.0 rather than some other value — the actual
+// if/else branches that produced it were invisible to the person reading the
+// score. Each function now also returns a `reasons` array of plain-language
+// explanations for every branch that actually fired, so the UI can show the
+// real rule that was applied instead of a generic fixed sentence.
 
 function duplicateNoiseReduction(articles=[]){
   const titles = articles.map(a=>clean(a.title || '').toLowerCase()).filter(Boolean);
-  if(titles.length < 8) return 0;
+  if(titles.length < 8) return { value:0, reasons:['Fewer than 8 signals: duplicate-noise check skipped.'] };
   const stems = titles.map(t=>t.replace(/[^a-z0-9]+/g,' ').split(' ').slice(0,8).join(' '));
   const unique = new Set(stems).size;
   const ratio = unique / Math.max(stems.length,1);
-  if(ratio < .55) return -4;
-  if(ratio < .72) return -2;
-  return 0;
+  const pct = Math.round(ratio*100);
+  if(ratio < .55) return { value:-4, reasons:[`Only ${pct}% of signals have distinct headlines (below 55%): -4 for heavy duplication.`] };
+  if(ratio < .72) return { value:-2, reasons:[`${pct}% of signals have distinct headlines (below 72%): -2 for moderate duplication.`] };
+  return { value:0, reasons:[`${pct}% of signals have distinct headlines: no duplication penalty.`] };
 }
 
 function globalSynchronizationAdjustment(contributors=[], drivers={}){
   const topShare = contributors[0]?.share || 0;
+  const topName = contributors[0]?.name || 'the top region';
   let adj = 0;
-  if(topShare > 58) adj -= 3; // regional concentration, not global synchronization
-  if(topShare < 38 && (drivers.Military||0) > 50) adj += 2; // pressure spread across regions
-  if((drivers.Cyber||0) > 45 && (drivers.Logistics||0) > 45) adj += 2;
-  return adj;
+  const reasons = [];
+  if(topShare > 58){ adj -= 3; reasons.push(`${topName} accounts for ${topShare}% of signals (>58%): -3, risk is regionally concentrated rather than globally synchronized.`); }
+  if(topShare < 38 && (drivers.Military||0) > 50){ adj += 2; reasons.push(`No single region dominates (top region ${topShare}% <38%) while Military pressure is high (${Math.round(drivers.Military||0)}): +2, pressure appears spread across regions.`); }
+  if((drivers.Cyber||0) > 45 && (drivers.Logistics||0) > 45){ adj += 2; reasons.push(`Cyber (${Math.round(drivers.Cyber||0)}) and Logistics (${Math.round(drivers.Logistics||0)}) are both elevated (>45): +2, possible cross-domain spillover.`); }
+  if(!reasons.length) reasons.push('No global-synchronization conditions were met: no adjustment.');
+  return { value:adj, reasons };
+}
+
+function stabilityAdjustment(drivers, regions, total, contributors=[]){
+  let adj = -3;
+  const reasons = ['Baseline stability adjustment: -3 (applied every cycle to avoid over-reacting to normal daily signal volume).'];
+  if((drivers.Military||0) > 58 && (drivers.Diplomatic||0) > 32){ adj += 2; reasons.push(`Military (${Math.round(drivers.Military||0)}) and Diplomatic (${Math.round(drivers.Diplomatic||0)}) are both elevated: +2, active engagement rather than silent escalation.`); }
+  if(regions[0]?.score > 62){ adj += 2; reasons.push(`Top region "${regions[0]?.name}" scores ${regions[0]?.score} (>62): +2, well-evidenced regional signal.`); }
+  if(total < 12){ adj -= 5; reasons.push(`Only ${total} public signals total (<12): -5, low signal volume reduces confidence.`); }
+  if((drivers.Logistics||0) < 22 && (drivers.Finance||0) < 22){ adj -= 2; reasons.push(`Logistics (${Math.round(drivers.Logistics||0)}) and Finance (${Math.round(drivers.Finance||0)}) both low (<22): -2, no economic spillover detected.`); }
+  if((contributors[0]?.share || 0) > 62){ adj -= 2; reasons.push(`Top region holds ${contributors[0]?.share}% share of signals (>62%): -2, penalizing single-region concentration.`); }
+  return { value: Math.round(adj*10)/10, reasons };
 }
 
 function pickTopEventFromScores(articleScores, regions){
@@ -493,16 +520,6 @@ function pickTopEventFromScores(articleScores, regions){
     .map(x=>({ ...x, regionBonus: x.regs[topRegion] ? 4 : 0 }))
     .sort((a,b)=>(b.score+b.regionBonus)-(a.score+a.regionBonus));
   return preferred[0]?.article || articleScores[0].article;
-}
-
-function stabilityAdjustment(drivers, regions, total, contributors=[]){
-  let adj = -3;
-  if((drivers.Military||0) > 58 && (drivers.Diplomatic||0) > 32) adj += 2;
-  if(regions[0]?.score > 62) adj += 2;
-  if(total < 12) adj -= 5;
-  if((drivers.Logistics||0) < 22 && (drivers.Finance||0) < 22) adj -= 2;
-  if((contributors[0]?.share || 0) > 62) adj -= 2;
-  return Math.round(adj*10)/10;
 }
 
 async function aiAssessment(analyzed, articles, sourceError=null){
@@ -949,6 +966,7 @@ function buildScoreBridge(analyzed){
     duplicateNoise: round1(analyzed.duplicateReduction),
     globalNormalization: round1(analyzed.globalNormalization),
     final: analyzed.final,
+    reasons: analyzed.adjustmentReasons || [],
     note: 'Raw weighted drivers are adjusted for duplicate noise, regional concentration, and global synchronization.'
   };
 }
@@ -1067,7 +1085,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
     drivers: analyzed.drivers,
     driverEvidence: analyzed.driverEvidence || {},
     weights: WEIGHTS,
-    calculation: { raw: round1(analyzed.raw), stability: round1(analyzed.adjustment), duplicateNoise: round1(analyzed.duplicateReduction), globalNormalization: round1(analyzed.globalNormalization), containment: round1(analyzed.adjustment + analyzed.duplicateReduction + analyzed.globalNormalization), final: score, reasoning: buildReasoning(analyzed, topRegion) },
+    calculation: { raw: round1(analyzed.raw), stability: round1(analyzed.adjustment), duplicateNoise: round1(analyzed.duplicateReduction), globalNormalization: round1(analyzed.globalNormalization), containment: round1(analyzed.adjustment + analyzed.duplicateReduction + analyzed.globalNormalization), final: score, reasoning: buildReasoning(analyzed, topRegion), adjustmentReasons: analyzed.adjustmentReasons || [] },
     regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend, signals:round1(r.raw || r.count || 0), sources:r.sources || 0, articles:r.articles || 0, terms:r.terms || [], freshness:r.freshness || 0, breakdown:r.breakdown || {} })),
     inactiveRegions: (analyzed.inactiveRegions || []).map(r=>({ name:r.name, trend:'No verified activity' })),
     timeline: timeline.length ? timeline : [{time: isBaseline ? 'N/A' : 'NOW', text: isBaseline ? 'No live signals available.' : 'Monitoring active.'}],
@@ -1112,7 +1130,7 @@ function fallbackPayload(error){
     sourceConfidence:{availableSources:[],limitedSources:['GDELT','Google News','USGS','NOAA','Guardian'],note:'Live public source retrieval failed entirely; all figures are fallback placeholders, not verified data.'},
     verifiedSources:[], evidence:{sourceCount:0, sources:[], articleCount:0, crossChecks:0, reliability:0}, evidenceStrength:'NONE', articleCount:0,
     topEvent:{ title:'No live top event available', summary:'No verified public signals are available due to an internal error.', source:'ORACLE System', url:'https://www.gdeltproject.org/' },
-    drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28 },
+    drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28, adjustmentReasons:['Fallback mode: adjustment reasons are not available because live scoring did not run.'] },
     regions:[{name:'Ukraine',score:44,change:'+1',trend:'Watch'},{name:'Taiwan Strait',score:39,change:'0',trend:'Watch'},{name:'Middle East',score:37,change:'0',trend:'Stable'},{name:'South China Sea',score:31,change:'0',trend:'Stable'},{name:'Korea',score:25,change:'0',trend:'Stable'}],
     timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED' }
   };
