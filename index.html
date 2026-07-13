@@ -39,8 +39,10 @@
     <section class="hero">
       <div class="hero-center">
         <div class="label">GLOBAL RISK INDEX</div>
-        <div class="score" id="score">--</div>
+        <div class="score-wrap"><div class="score" id="score">--</div><span>/100</span></div>
         <div class="state" id="state">SYNCING</div>
+        <div class="risk-scale" aria-label="Risk scale"><div class="risk-scale-track"><i id="riskNeedle"></i></div><div class="risk-scale-labels"><span>LOW</span><span>WATCH</span><span>HIGH</span><span>CRITICAL</span></div></div>
+        <div class="hero-meta"><div><span>PRIMARY DRIVER</span><strong id="primaryDriver">—</strong></div><div><span>EVIDENCE</span><strong id="heroConfidence">—</strong></div><div><span>24H CHANGE</span><strong id="heroChange">—</strong></div></div>
         <button class="why" id="whyBtn" type="button">ⓘ WHY SCORE?</button>
         <div class="delta" id="delta">—</div>
         <div class="updated" id="updated">UPDATED — WAITING</div>
@@ -79,6 +81,7 @@
         <div class="card-head"><b>TOP EVENT</b><span id="eventSource">SOURCE</span></div>
         <h2 id="eventTitle">Monitoring public signals</h2>
         <p id="eventSummary">No event loaded yet.</p>
+        <div class="event-meta"><span id="eventCategory">MONITORING</span><span id="eventRegion">GLOBAL</span><span id="eventImpact">IMPACT —</span></div>
         <a id="eventLink" href="#" target="_blank" rel="noopener">VIEW REPORT →</a>
       </article>
 
@@ -116,6 +119,9 @@
       </article>
     </section>
 
+    <section class="advanced-toggle-wrap reveal"><button id="advancedToggle" class="advanced-toggle" type="button" aria-expanded="true">HIDE TECHNICAL DETAIL</button></section>
+
+    <div id="advancedDetail">
     <section class="grid">
       <article class="card reveal">
         <div class="card-head"><b>SOURCE CONFIDENCE</b><span>VERIFICATION LAYER</span></div>
@@ -169,6 +175,8 @@
       <textarea id="postText" rows="9" placeholder="Generated post will appear here."></textarea>
       <pre id="debugBox"></pre>
     </section>
+
+    </div>
 
     <footer class="footer">ORACLE is an experimental, non-commercial dashboard built from public news/event feeds and rule-based heuristics, with optional AI-assisted phrasing. Scores, driver weights, and regional rankings are hand-tuned estimates, not a validated or peer-reviewed risk model. This platform provides situational awareness only — it is not a prediction system, not investment/policy/safety advice, and should not be relied on for decisions.</footer>
   </main>

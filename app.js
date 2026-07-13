@@ -174,6 +174,13 @@ function render(data){
   const state = currentData.state || stateFromScore(score);
   $('score').textContent = score;
   $('state').textContent = state;
+  if($('riskNeedle')) $('riskNeedle').style.left = `${score}%`;
+  const driverEntries = Object.entries(currentData.drivers || fallback.drivers).sort((a,b)=>Number(b[1])-Number(a[1]));
+  const primaryDriver = driverEntries[0]?.[0] || (currentData.regions?.[0]?.name) || 'GLOBAL';
+  if($('primaryDriver')) $('primaryDriver').textContent = primaryDriver.toUpperCase();
+  const evidenceLabel = currentData.evidenceStrength || evidenceStrengthFromData(currentData);
+  if($('heroConfidence')) $('heroConfidence').textContent = `${evidenceLabel} · ${Math.round(currentData.sourceHealth || currentData.confidence || 70)}%`;
+  if($('heroChange')) $('heroChange').textContent = `${diff > 0 ? '+' : ''}${diff} PTS`;
   $('delta').textContent = `${diff >= 0 ? '▲ +' : '▼ '}${Math.abs(diff)} / 24H`;
   $('updated').textContent = `UPDATED — ${fmtTime(currentData.updatedAt)}`;
   $('lastSync').textContent = fmtTime(currentData.updatedAt);
@@ -211,6 +218,13 @@ function render(data){
   $('eventSource').textContent = e.source || 'SOURCE';
   $('eventTitle').textContent = e.title || 'Monitoring public signals';
   $('eventSummary').textContent = e.summary || '';
+  const eventText = `${e.title || ''} ${e.summary || ''}`.toLowerCase();
+  const category = /missile|military|strike|troop|drone|war|navy|army/.test(eventText) ? 'MILITARY' : /oil|market|finance|currency|trade|economic/.test(eventText) ? 'FINANCE' : /earthquake|storm|flood|volcano|disaster/.test(eventText) ? 'DISASTER' : /cyber|hack|ransomware|malware/.test(eventText) ? 'CYBER' : 'DIPLOMATIC';
+  const region = (currentData.regions || []).find(r=>eventText.includes(String(r.name || '').toLowerCase()))?.name || currentData.regions?.[0]?.name || 'GLOBAL';
+  const impact = Math.max(score, Number(currentData.regions?.[0]?.score || 0));
+  if($('eventCategory')) $('eventCategory').textContent = category;
+  if($('eventRegion')) $('eventRegion').textContent = String(region).toUpperCase();
+  if($('eventImpact')) $('eventImpact').textContent = `IMPACT ${impact >= 70 ? 'VERY HIGH' : impact >= 50 ? 'HIGH' : impact >= 30 ? 'MODERATE' : 'LOW'}`;
   $('eventLink').href = e.url || '#';
 
   renderDrivers(currentData.drivers || fallback.drivers);
@@ -238,6 +252,10 @@ function renderLists(id, items){
   const el = $(id);
   if(!el) return;
   const list = Array.isArray(items) ? items.slice(0,5) : [];
+  if(id === 'watchNext'){
+    el.innerHTML = list.map((x,i)=>`<li class="watch-item"><span>${String(i+1).padStart(2,'0')}</span><div><b>${escapeHtml(x)}</b><em>Potential index mover · verify across independent sources</em></div></li>`).join('') || '<li>Monitoring public signals.</li>';
+    return;
+  }
   el.innerHTML = list.map(x=>`<li>${escapeHtml(x)}</li>`).join('') || '<li>Monitoring public signals.</li>';
 }
 function uniqueSourceNames(items=[]){
@@ -419,17 +437,25 @@ function renderDrivers(drivers){
     <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
   `).join('');
 }
+function regionFlag(name=''){
+  const n=String(name).toLowerCase();
+  if(/ukraine/.test(n)) return '🇺🇦'; if(/taiwan/.test(n)) return '🇹🇼'; if(/middle east|iran|israel|gaza/.test(n)) return '🌍'; if(/china sea|china/.test(n)) return '🇨🇳'; if(/korea/.test(n)) return '🇰🇷'; if(/russia/.test(n)) return '🇷🇺'; if(/japan/.test(n)) return '🇯🇵'; return '◉';
+}
 function renderRegions(regions){
   const el = $('regions');
   const active = (regions || []).filter(r=>Number(r.score || 0) > 0 && Number(r.signals || 0) > 0 && Number(r.sources || 0) > 0).slice(0,5);
-  el.innerHTML = active.map((r,i)=>`<button class="rank evidence-trigger" type="button" data-region="${escapeAttr(r.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><div class="rankname">${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(r.trend || 'Watch')} ${r.change ? `• ${escapeHtml(r.change)}` : ''} · ${Number(r.signals || 0).toFixed(1)} signals · ${r.sources || 0} sources</div></div><div class="rankscore">${Math.round(r.score)}</div><div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div></button>`).join('');
+  el.innerHTML = active.map((r,i)=>`<button class="rank evidence-trigger" type="button" data-region="${escapeAttr(r.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><div class="rankname"><span class="region-flag">${regionFlag(r.name)}</span>${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(r.trend || 'Watch')} ${r.change ? `• ${escapeHtml(r.change)}` : ''} · ${Number(r.signals || 0).toFixed(1)} signals · ${r.sources || 0} sources</div></div><div class="rankscore">${Math.round(r.score)}</div><div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div></button>`).join('');
   if(!active.length) el.innerHTML = '<p class="no-active-regions">No verified regional activity in the current window.</p>';
   el.querySelectorAll('[data-region]').forEach(btn=>btn.addEventListener('click', ()=>showRegionEvidence(btn.dataset.region)));
+}
+function timelineIcon(t={}){
+  const s=`${t.text||''} ${(t.drivers||[]).join(' ')}`.toLowerCase();
+  if(/military|missile|strike|drone|troop|navy/.test(s)) return '⚔'; if(/cyber|hack|malware/.test(s)) return '⌁'; if(/oil|finance|market|trade/.test(s)) return '◈'; if(/earthquake|storm|flood|disaster/.test(s)) return '△'; return '●';
 }
 function renderTimeline(timeline){
   const list = (timeline || []).slice(0,5);
   $('timelineCount').textContent = `${list.length} SIGNALS`;
-  $('timeline').innerHTML = list.map(t=>{ const tags=[...(t.regions||[]).slice(0,1),...(t.drivers||[]).slice(0,1)]; const tagHtml=tags.map(tag=>`<span>${escapeHtml(tag)}</span>`).join(''); const body=`<div><div class="timeline-tags">${tagHtml}</div><p>${escapeHtml(t.text||'')}</p></div>`; return t.url ? `<a class="timeline-row timeline-link" href="${escapeAttr(t.url)}" target="_blank" rel="noopener noreferrer"><time>${escapeHtml(t.time||'')}</time>${body}</a>` : `<div class="timeline-row"><time>${escapeHtml(t.time||'')}</time>${body}</div>`; }).join('');
+  $('timeline').innerHTML = list.map(t=>{ const tags=[...(t.regions||[]).slice(0,1),...(t.drivers||[]).slice(0,1)]; const tagHtml=tags.map(tag=>`<span>${escapeHtml(tag)}</span>`).join(''); const body=`<div class="timeline-icon">${timelineIcon(t)}</div><div><div class="timeline-tags">${tagHtml}</div><p>${escapeHtml(t.text||'')}</p></div>`; return t.url ? `<a class="timeline-row timeline-link" href="${escapeAttr(t.url)}" target="_blank" rel="noopener noreferrer"><time>${escapeHtml(t.time||'')}</time>${body}</a>` : `<div class="timeline-row"><time>${escapeHtml(t.time||'')}</time>${body}</div>`; }).join('');
 }
 function renderMetrics(m){
   $('metricConflicts').textContent = m.conflicts || '7';
@@ -598,6 +624,13 @@ function setup(){
   $('refreshBtn')?.addEventListener('click', loadRisk);
   $('makeGlobalPostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('en'));
   $('makeJapanesePostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('ja'));
+  const advancedToggle = $('advancedToggle');
+  const advancedDetail = $('advancedDetail');
+  if(advancedToggle && advancedDetail){
+    const setAdvanced = open => { advancedDetail.hidden = !open; advancedToggle.setAttribute('aria-expanded', String(open)); advancedToggle.textContent = open ? 'HIDE TECHNICAL DETAIL' : 'SHOW TECHNICAL DETAIL'; };
+    setAdvanced(window.innerWidth > 720);
+    advancedToggle.addEventListener('click', ()=>setAdvanced(advancedDetail.hidden));
+  }
   $('copyPostBtn')?.addEventListener('click', async ()=>{ await navigator.clipboard.writeText($('postText').value || generatePost('en')); });
   loadRisk();
   setInterval(loadRisk, 60000);
