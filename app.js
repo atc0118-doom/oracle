@@ -10,6 +10,7 @@ const fallback = {
   state: 'WATCH',
   confidence: 74,
   evidenceStrength: 'LIMITED',
+  dataMode: 'fallback',
   updatedAt: new Date().toISOString(),
   sourceHealth: 88,
   aiMode: 'RULE BASED',
@@ -53,119 +54,6 @@ function stateFromScore(score){
   if(score >= 30) return 'WATCH';
   return 'STABLE';
 }
-// ---------------------------------------------------------------------------
-// Daily-return features: visit streak, score history, and a "what changed
-// since last time you looked" summary. All client-side (localStorage), no
-// backend change needed — this is purely about making a repeat visit feel
-// worthwhile, not about the accuracy of the score itself.
-// ---------------------------------------------------------------------------
-const HISTORY_KEY = 'oracle_score_history_v1';
-const STREAK_KEY = 'oracle_streak_v1';
-const MAX_HISTORY_DAYS = 30;
-
-function todayStamp(){
-  // Use JST calendar day so the streak lines up with the JST timestamps shown elsewhere.
-  const now = new Date();
-  const jst = new Date(now.toLocaleString('en-US', { timeZone:'Asia/Tokyo' }));
-  return `${jst.getFullYear()}-${String(jst.getMonth()+1).padStart(2,'0')}-${String(jst.getDate()).padStart(2,'0')}`;
-}
-function daysBetweenStamps(a, b){
-  return Math.round((new Date(b) - new Date(a)) / 86400000);
-}
-
-function loadHistory(){
-  try{ return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }catch(_){ return []; }
-}
-function saveHistory(history){
-  try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-MAX_HISTORY_DAYS))); }catch(_){ /* storage unavailable, skip silently */ }
-}
-
-function updateStreak(stamp){
-  let streak;
-  try{ streak = JSON.parse(localStorage.getItem(STREAK_KEY) || 'null'); }catch(_){ streak = null; }
-  if(!streak){
-    streak = { lastDate: stamp, count: 1 };
-  }else if(streak.lastDate === stamp){
-    // already counted today
-  }else{
-    const gap = daysBetweenStamps(streak.lastDate, stamp);
-    streak = gap === 1 ? { lastDate: stamp, count: streak.count + 1 } : { lastDate: stamp, count: 1 };
-  }
-  try{ localStorage.setItem(STREAK_KEY, JSON.stringify(streak)); }catch(_){ /* ignore */ }
-  return streak.count;
-}
-
-function recordVisitAndDiff(data){
-  const stamp = todayStamp();
-  const score = clamp(data.score, 0, 100);
-  const state = data.state || stateFromScore(score);
-  const topRegion = (data.regions && data.regions[0] && data.regions[0].name) || 'Global';
-
-  const history = loadHistory();
-  const last = history[history.length - 1];
-
-  // One entry per calendar day: update today's entry in place on repeat loads,
-  // otherwise append a fresh day so the sparkline reflects one point per day.
-  if(last && last.date === stamp){
-    last.score = score; last.state = state; last.topRegion = topRegion;
-  }else{
-    history.push({ date: stamp, score, state, topRegion });
-  }
-  const previousEntry = (last && last.date === stamp) ? history[history.length - 2] : last;
-  saveHistory(history);
-
-  const streakCount = updateStreak(stamp);
-  const streakLabel = $('streakLabel');
-  if(streakLabel) streakLabel.textContent = `${streakCount} DAY${streakCount === 1 ? '' : 'S'} STREAK`;
-
-  const diffEl = $('dailyDiffText');
-  if(diffEl){
-    if(!previousEntry){
-      diffEl.textContent = `First visit logged today. Come back tomorrow to see how the index moved.`;
-    }else{
-      const delta = score - previousEntry.score;
-      const dir = delta > 0 ? 'up' : delta < 0 ? 'down' : 'unchanged';
-      const deltaText = delta === 0 ? 'unchanged' : `${dir} ${Math.abs(delta)} pts`;
-      const regionNote = previousEntry.topRegion && previousEntry.topRegion !== topRegion
-        ? ` Top region shifted from ${previousEntry.topRegion} to ${topRegion}.`
-        : '';
-      const stateNote = previousEntry.state && previousEntry.state !== state
-        ? ` Status moved from ${previousEntry.state} to ${state}.`
-        : '';
-      diffEl.textContent = `Since your last visit (${previousEntry.date}): index ${deltaText} (${previousEntry.score} → ${score}).${stateNote}${regionNote}`;
-    }
-  }
-
-  renderSparkline(history);
-}
-
-function renderSparkline(history){
-  const svg = $('sparkline');
-  if(!svg) return;
-  const points = history.slice(-MAX_HISTORY_DAYS);
-  if(points.length < 2){
-    svg.innerHTML = '';
-    if($('sparklineFrom')) $('sparklineFrom').textContent = points[0]?.date || '—';
-    return;
-  }
-  const w = 300, h = 60, pad = 4;
-  const scores = points.map(p=>p.score);
-  const min = Math.min(...scores), max = Math.max(...scores);
-  const range = Math.max(1, max - min);
-  const stepX = (w - pad*2) / (points.length - 1);
-  const coords = points.map((p,i)=>{
-    const x = pad + i*stepX;
-    const y = h - pad - ((p.score - min) / range) * (h - pad*2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const last = coords[coords.length-1].split(',');
-  svg.innerHTML = `
-    <polyline points="${coords.join(' ')}" fill="none" stroke="#c9ab45" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${last[0]}" cy="${last[1]}" r="3" fill="#c9ab45"/>
-  `;
-  if($('sparklineFrom')) $('sparklineFrom').textContent = `${points[0].date} · ${points[0].score}`;
-}
-
 function render(data){
   currentData = data || fallback;
   const score = clamp(currentData.score, 0, 100);
@@ -174,13 +62,6 @@ function render(data){
   const state = currentData.state || stateFromScore(score);
   $('score').textContent = score;
   $('state').textContent = state;
-  if($('riskNeedle')) $('riskNeedle').style.left = `${score}%`;
-  const driverEntries = Object.entries(currentData.drivers || fallback.drivers).sort((a,b)=>Number(b[1])-Number(a[1]));
-  const primaryDriver = driverEntries[0]?.[0] || (currentData.regions?.[0]?.name) || 'GLOBAL';
-  if($('primaryDriver')) $('primaryDriver').textContent = primaryDriver.toUpperCase();
-  const evidenceLabel = currentData.evidenceStrength || evidenceStrengthFromData(currentData);
-  if($('heroConfidence')) $('heroConfidence').textContent = `${evidenceLabel} · ${Math.round(currentData.sourceHealth || currentData.confidence || 70)}%`;
-  if($('heroChange')) $('heroChange').textContent = `${diff > 0 ? '+' : ''}${diff} PTS`;
   $('delta').textContent = `${diff >= 0 ? '▲ +' : '▼ '}${Math.abs(diff)} / 24H`;
   $('updated').textContent = `UPDATED — ${fmtTime(currentData.updatedAt)}`;
   $('lastSync').textContent = fmtTime(currentData.updatedAt);
@@ -191,40 +72,19 @@ function render(data){
   renderLists('keyDrivers', currentData.keyDrivers || fallback.keyDrivers);
   renderLists('watchNext', currentData.watchNext || fallback.watchNext);
   renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
+  renderVerifiedSources(currentData.verifiedSources || fallback.verifiedSources || []);
   renderEvidence(currentData);
-  renderDataSources(currentData);
   $('confidence').textContent = `EVIDENCE STRENGTH ${currentData.evidenceStrength || evidenceStrengthFromData(currentData)}`;
   $('confidenceBar').style.width = `${clamp(currentData.sourceHealth || currentData.confidence || 70,0,100)}%`;
   renderContributors(currentData.contributors || fallback.contributors || []);
   renderScoreBridge(currentData.scoreBridge || fallback.scoreBridge || {});
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
-  const statusText = currentData.dataStatus || (currentData.mode === 'live' ? 'LIVE SOURCES' : currentData.mode === 'degraded' ? 'CACHED / DEGRADED' : 'BASELINE');
-  if($('dataStatus')) $('dataStatus').textContent = statusText;
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
-  // FIX (honesty): the headline used to hardcode "60 SEC" (the browser's own
-  // auto-refresh timer) right above a footnote admitting the real server
-  // cache is 10 minutes — two numbers on screen at once describing the same
-  // thing differently. The real cache duration is now the headline value.
-  if($('pollInterval') || $('cacheNote')){
-    const ttl = currentData.cacheTtlMinutes;
-    const ttlLabel = ttl ? `${ttl} MIN` : '10 MIN';
-    if($('pollInterval')) $('pollInterval').textContent = ttlLabel;
-    if($('cacheNote')) $('cacheNote').textContent = ttl
-      ? `Source data is cached up to ${ttl} min server-side`
-      : 'Source cache duration unknown';
-  }
 
   const e = currentData.topEvent || fallback.topEvent;
   $('eventSource').textContent = e.source || 'SOURCE';
   $('eventTitle').textContent = e.title || 'Monitoring public signals';
   $('eventSummary').textContent = e.summary || '';
-  const eventText = `${e.title || ''} ${e.summary || ''}`.toLowerCase();
-  const category = /missile|military|strike|troop|drone|war|navy|army/.test(eventText) ? 'MILITARY' : /oil|market|finance|currency|trade|economic/.test(eventText) ? 'FINANCE' : /earthquake|storm|flood|volcano|disaster/.test(eventText) ? 'DISASTER' : /cyber|hack|ransomware|malware/.test(eventText) ? 'CYBER' : 'DIPLOMATIC';
-  const region = (currentData.regions || []).find(r=>eventText.includes(String(r.name || '').toLowerCase()))?.name || currentData.regions?.[0]?.name || 'GLOBAL';
-  const impact = Math.max(score, Number(currentData.regions?.[0]?.score || 0));
-  if($('eventCategory')) $('eventCategory').textContent = category;
-  if($('eventRegion')) $('eventRegion').textContent = String(region).toUpperCase();
-  if($('eventImpact')) $('eventImpact').textContent = `IMPACT ${impact >= 70 ? 'VERY HIGH' : impact >= 50 ? 'HIGH' : impact >= 30 ? 'MODERATE' : 'LOW'}`;
   $('eventLink').href = e.url || '#';
 
   renderDrivers(currentData.drivers || fallback.drivers);
@@ -232,7 +92,6 @@ function render(data){
   renderTimeline(currentData.timeline || fallback.timeline);
   renderMetrics(currentData.metrics || fallback.metrics);
   renderCalc(currentData);
-  recordVisitAndDiff(currentData);
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
 }
@@ -252,48 +111,29 @@ function renderLists(id, items){
   const el = $(id);
   if(!el) return;
   const list = Array.isArray(items) ? items.slice(0,5) : [];
-  if(id === 'watchNext'){
-    el.innerHTML = list.map((x,i)=>`<li class="watch-item"><span>${String(i+1).padStart(2,'0')}</span><div><b>${escapeHtml(x)}</b><em>Potential index mover · verify across independent sources</em></div></li>`).join('') || '<li>Monitoring public signals.</li>';
-    return;
-  }
   el.innerHTML = list.map(x=>`<li>${escapeHtml(x)}</li>`).join('') || '<li>Monitoring public signals.</li>';
 }
-function uniqueSourceNames(items=[]){
-  const seen = new Set();
-  return items.filter(Boolean).filter(name=>{
-    const key = String(name).trim().toLowerCase();
-    if(!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 function renderSourceConfidence(sc){
   const el = $('sourceConfidence');
   if(!el) return;
-  const limited = uniqueSourceNames(sc.limitedSources || []).slice(0,5);
-  const limitedHtml = limited.length
-    ? `<div class="source-pillset">${limited.map(s=>`<em>LIMITED · ${escapeHtml(s)}</em>`).join('')}</div>`
-    : '';
-  el.innerHTML = `${limitedHtml}<p>${escapeHtml(sc.note || 'Source status is being monitored.')}</p>`;
+  const available = (sc.availableSources || []).slice(0,8).map(s=>`<b>${escapeHtml(s)}</b>`).join('');
+  const limited = (sc.limitedSources || []).slice(0,5).map(s=>`<em>${escapeHtml(s)}</em>`).join('');
+  el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
+}
+
+function renderVerifiedSources(sources){
+  const el = $('verifiedSources');
+  if(!el) return;
+  const list = Array.isArray(sources) ? sources.slice(0,8) : [];
+  el.innerHTML = list.length
+    ? list.map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('')
+    : '<em>No verified source list available</em>';
 }
 
 function renderEvidence(data){
   const ev = data.evidence || {};
-  const sources = uniqueSourceNames([
-    ...(Array.isArray(ev.sources) ? ev.sources : []),
-    ...(data.verifiedSources || []),
-    ...((data.sourceConfidence && data.sourceConfidence.availableSources) || [])
-  ]);
-  // FIX: the "N SOURCES" label used to come from the backend's own count
-  // (ev.sourceCount, capped at 10) while the badge list below it was a
-  // separately-deduplicated client-side array capped at 8 — two different
-  // numbers computed two different ways, so they could (and did) disagree,
-  // e.g. "9 SOURCES" label with only 8 badges actually shown. Now both the
-  // label and the badges are derived from the same displayed list, so they
-  // can never mismatch.
-  const displayedSources = sources.slice(0, 10);
-  const sourceCount = displayedSources.length || 1;
+  const sources = Array.isArray(ev.sources) && ev.sources.length ? ev.sources : (data.verifiedSources || []);
+  const sourceCount = ev.sourceCount || sources.length || 1;
   const articleCount = ev.articleCount || data.articleCount || 0;
   const reliability = Math.round(ev.reliability || data.sourceHealth || 70);
   const checks = ev.crossChecks || Math.max(1, Math.min(3, sourceCount - 1));
@@ -301,92 +141,17 @@ function renderEvidence(data){
   if($('evidenceChecks')) $('evidenceChecks').textContent = `${checks} CROSS CHECKS`;
   if($('evidenceArticles')) $('evidenceArticles').textContent = `${articleCount} SIGNALS`;
   if($('evidenceReliability')) $('evidenceReliability').textContent = `${reliability}%`;
-  if($('evidenceSourceList')) $('evidenceSourceList').innerHTML = (displayedSources.map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>') + `<small class="evidence-definition">Reliability estimate reflects active feed coverage, source diversity, signal volume, and feed health. Cross checks indicate independent source groups, not fact-check verdicts.</small>`;
-}
-
-function renderDataSources(data){
-  const el = $('dataSourcesList');
-  if(!el) return;
-
-  // FIX: this panel used to be static HTML listing GDELT/Reuters/AP/BBC/NHK/
-  // USGS/NASA/MarineTraffic/FlightRadar24 as permanently "active" (green dot),
-  // even though the backend never calls NASA, MarineTraffic, or FlightRadar24
-  // at all, and Reuters/AP/BBC/NHK only ever appear as the *origin* of an
-  // aggregated article (via GDELT/Google News), not as separately-fetched
-  // feeds. That mismatch is exactly what made this panel contradict the
-  // "SOURCE CONFIDENCE" section, which correctly showed some of those same
-  // names as "LIMITED". Now this panel is built only from what the current
-  // payload actually reports.
-  const available = uniqueSourceNames((data.sourceConfidence && data.sourceConfidence.availableSources) || []);
-  const limited = uniqueSourceNames((data.sourceConfidence && data.sourceConfidence.limitedSources) || []);
-  const evidenceSources = uniqueSourceNames((data.evidence && data.evidence.sources) || []);
-  const verified = uniqueSourceNames(data.verifiedSources || []);
-
-  const seen = new Set();
-  const badges = [];
-
-  const addBadge = (name, status)=>{
-    const key = name.toLowerCase();
-    if(seen.has(key)) return;
-    seen.add(key);
-    badges.push({ name, status });
-  };
-
-  // FIX: previously "active" sources were added first and "limited" sources
-  // last, then the whole list was capped with .slice(0,12). Whenever the
-  // active count happened to land at exactly the cap (as it did here), the
-  // limited/non-working sources — the most important thing to surface —
-  // were silently cut off, even though the SOURCE CONFIDENCE panel elsewhere
-  // on the same page correctly listed them as LIMITED. Limited sources are
-  // now added first so they can never be pushed out by the cap, and the cap
-  // itself is raised to give more headroom.
-  limited.forEach(s=>addBadge(s,'limited'));
-  available.forEach(s=>addBadge(s,'active'));
-  evidenceSources.forEach(s=>addBadge(s,'active'));
-  verified.forEach(s=>addBadge(s,'active'));
-
-  if(!badges.length){
-    el.innerHTML = '<em>No source status reported.</em>';
-    return;
+  if($('evidenceSourceList')) {
+    const mode = data.dataMode || ev.dataMode || 'live';
+    const factor = ev.factors ? `<small class="evidence-factors">Mode: ${escapeHtml(mode.toUpperCase())} · Diversity ${ev.factors.sourceDiversity}% · Freshness ${ev.factors.freshness}% · Completeness ${ev.factors.completeness}% · Agreement ${ev.factors.consensus}%</small>` : '';
+    const status = Array.isArray(ev.status) && ev.status.length ? `<small class="evidence-factors">${ev.status.slice(0,5).map(x=>`${escapeHtml(x.name)}:${escapeHtml(x.status)}`).join(' · ')}</small>` : '';
+    $('evidenceSourceList').innerHTML = (sources.slice(0,8).map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('') || '<em>Public sources monitored</em>') + factor + status;
   }
-
-  el.innerHTML = badges.slice(0,16).map(b=>
-    `<b data-status="${b.status}">${escapeHtml(b.name)} <i></i></b>`
-  ).join('');
 }
 
 function escapeHtml(str=''){
   return String(str).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 }
-
-function escapeAttr(str=''){
-  return escapeHtml(str).replace(/'/g,'&#39;');
-}
-
-function ensureRegionEvidenceModal(){
-  let modal = $('regionEvidenceModal');
-  if(modal) return modal;
-  modal = document.createElement('div');
-  modal.id = 'regionEvidenceModal';
-  modal.className = 'region-evidence-modal';
-  modal.innerHTML = `<div class="region-evidence-card" role="dialog" aria-modal="true" aria-labelledby="regionEvidenceTitle"><button class="region-evidence-close" type="button" aria-label="Close">×</button><div class="region-evidence-kicker">REGION EVIDENCE</div><h3 id="regionEvidenceTitle">Region</h3><div id="regionEvidenceMeta" class="region-evidence-meta"></div><div id="regionEvidenceList" class="region-evidence-list"></div><p class="region-evidence-note">Articles are source-bound public signals. Contribution values explain relative input strength; they are not probabilities.</p></div>`;
-  document.body.appendChild(modal);
-  modal.querySelector('.region-evidence-close').addEventListener('click', ()=>modal.classList.remove('open'));
-  modal.addEventListener('click', e=>{ if(e.target === modal) modal.classList.remove('open'); });
-  return modal;
-}
-
-function showRegionEvidence(regionName){
-  const modal = ensureRegionEvidenceModal();
-  const data = currentData?.regionEvidence?.[regionName];
-  const region = (currentData?.regions || []).find(r=>r.name === regionName);
-  $('regionEvidenceTitle').textContent = regionName;
-  $('regionEvidenceMeta').innerHTML = data ? `<span>${Math.round(data.score || region?.score || 0)} regional risk</span><span>${Number(data.signals || 0).toFixed(1)} signals</span><span>${data.sources || 0} sources</span>` : `<span>${Math.round(region?.score || 0)} regional risk</span><span>Evidence mapping unavailable</span>`;
-  const items = data?.evidence || [];
-  $('regionEvidenceList').innerHTML = items.length ? items.map(item=>`<a class="region-evidence-item" href="${escapeAttr(item.url || '#')}" target="_blank" rel="noopener noreferrer"><div class="region-evidence-item-head"><b>${escapeHtml(item.source || 'Source')}</b><strong>+${Number(item.contribution || 0).toFixed(1)}</strong></div><p>${escapeHtml(item.title || 'Public signal')}</p><div class="region-evidence-tags"><span>${escapeHtml(item.primaryDriver || 'General')}</span><span>${Number(item.signals || 0).toFixed(1)} signal</span></div></a>`).join('') : '<p class="region-evidence-empty">No source-bound article evidence is currently available for this region.</p>';
-  modal.classList.add('open');
-}
-
 
 function shortIntelText(str='', max=165){
   const clean = String(str || '').replace(/\s+/g,' ').trim();
@@ -408,9 +173,19 @@ function evidenceStrengthFromData(data){
 function renderContributors(contributors){
   const el = $('contributors');
   if(!el) return;
-  const list = (contributors || []).filter(c=>Number(c.signals || 0) > 0 && Number(c.sources || 0) > 0 && Number(c.score || 0) > 0).slice(0,5);
-  el.innerHTML = list.map((c,i)=>`<button class="contributor-row evidence-trigger" type="button" data-region="${escapeAttr(c.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${Number(c.signals || 0).toFixed(1)} signals · ${c.sources || 0} sources</span></div><strong>+${Math.round(c.impact || 0)}</strong><div class="rankbar"><i style="width:${clamp(c.share || c.score || 0,0,100)}%"></i></div></button>`).join('') || '<p>Contributor data is being calculated.</p>';
-  el.querySelectorAll('[data-region]').forEach(btn=>btn.addEventListener('click', ()=>showRegionEvidence(btn.dataset.region)));
+  const list = (contributors || []).slice(0,5);
+  el.innerHTML = list.map((c,i)=>{
+    const impact = Math.round(c.impact || 0);
+    const signals = c.signals !== undefined ? `${Number(c.signals).toFixed(1)} signals` : `${Math.round(c.share || 0)}% signal share`;
+    const sources = c.sources !== undefined ? `${c.sources} sources` : 'source mix tracked';
+    return `
+    <div class="contributor-row">
+      <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
+      <div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.trend || 'Watch')} · ${signals} · ${sources}</span></div>
+      <strong>+${impact}<small> pts</small></strong>
+      <div class="rankbar"><i style="width:${clamp(impact * 4,0,100)}%"></i></div>
+    </div>`;
+  }).join('') || '<p>Contributor data is being calculated.</p>';
 }
 
 function renderScoreBridge(bridge){
@@ -421,41 +196,50 @@ function renderScoreBridge(bridge){
   const duplicateNoise = Number(bridge.duplicateNoise ?? 0);
   const globalNormalization = Number(bridge.globalNormalization ?? 0);
   const final = Number(bridge.final ?? currentData?.score ?? 0);
-  const line = (label, val) => `<div class="bridge-line"><span>${label}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
+  const line = (label, val, note='') => `<div class="bridge-line"><span>${label}${note ? `<small>${escapeHtml(note)}</small>` : ''}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
+  const duplicate = bridge.duplicate || {};
+  const global = bridge.global || {};
+  const stabilityDetails = Array.isArray(bridge.stabilityDetails) ? bridge.stabilityDetails : [];
+  const formula = Array.isArray(bridge.formula) ? bridge.formula : [];
+  const stabilityNote = stabilityDetails.length ? stabilityDetails.map(x=>`${x.label} ${Number(x.value)>=0?'+':''}${Number(x.value).toFixed(1)}`).join(' / ') : 'Primary driver and containment checks';
+  const duplicateNote = duplicate.note || 'Duplicate handling produced no reduction for this cycle.';
+  const globalNote = global.reason || 'Cross-region normalization based on active regional contributor distribution.';
   el.innerHTML = `
     <div class="bridge-main"><span>RAW</span><b>${raw.toFixed(1)}</b><em>→</em><span>INDEX</span><b>${Math.round(final)}</b></div>
-    ${line('Stability adjustment', stability)}
-    ${line('Duplicate / noise reduction', duplicateNoise)}
-    ${line('Global synchronization', globalNormalization)}
-    <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
+    ${line('Stability adjustment', stability, stabilityNote)}
+    ${line('Duplicate / noise reduction', duplicateNoise, duplicateNote)}
+    ${line('Global synchronization', globalNormalization, globalNote)}
+    <div class="formula-box">
+      <b>WHY ${Math.round(final)}?</b>
+      <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
+      ${formula.length ? formula.map(f=>`<div class="formula-line"><span>${escapeHtml(f.label)}</span><strong>${Number(f.value)>=0 && f.label !== 'Final index' ? '+' : ''}${f.label === 'Final index' ? Math.round(f.value) : Number(f.value).toFixed(1)}</strong><small>${escapeHtml(f.note || '')}</small></div>`).join('') : ''}
+    </div>
   `;
 }
 
 function renderDrivers(drivers){
+  const evidence = currentData?.driverEvidence || {};
   const entries = Object.entries(drivers);
-  $('drivers').innerHTML = entries.map(([k,v])=>`
-    <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
-  `).join('');
-}
-function regionFlag(name=''){
-  const n=String(name).toLowerCase();
-  if(/ukraine/.test(n)) return '🇺🇦'; if(/taiwan/.test(n)) return '🇹🇼'; if(/middle east|iran|israel|gaza/.test(n)) return '🌍'; if(/china sea|china/.test(n)) return '🇨🇳'; if(/korea/.test(n)) return '🇰🇷'; if(/russia/.test(n)) return '🇷🇺'; if(/japan/.test(n)) return '🇯🇵'; return '◉';
+  $('drivers').innerHTML = entries.map(([k,v])=>{
+    const ev = evidence[k] || {};
+    const sub = ev.basis ? `<small>${escapeHtml(ev.basis)} · +${Number(ev.contribution||0).toFixed(1)} pts</small>` : `<small>Evidence score, not probability</small>`;
+    return `<div class="driver driver-evidence"><span>${k}${sub}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>`;
+  }).join('');
 }
 function renderRegions(regions){
-  const el = $('regions');
-  const active = (regions || []).filter(r=>Number(r.score || 0) > 0 && Number(r.signals || 0) > 0 && Number(r.sources || 0) > 0).slice(0,5);
-  el.innerHTML = active.map((r,i)=>`<button class="rank evidence-trigger" type="button" data-region="${escapeAttr(r.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><div class="rankname"><span class="region-flag">${regionFlag(r.name)}</span>${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(r.trend || 'Watch')} ${r.change ? `• ${escapeHtml(r.change)}` : ''} · ${Number(r.signals || 0).toFixed(1)} signals · ${r.sources || 0} sources</div></div><div class="rankscore">${Math.round(r.score)}</div><div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div></button>`).join('');
-  if(!active.length) el.innerHTML = '<p class="no-active-regions">No verified regional activity in the current window.</p>';
-  el.querySelectorAll('[data-region]').forEach(btn=>btn.addEventListener('click', ()=>showRegionEvidence(btn.dataset.region)));
-}
-function timelineIcon(t={}){
-  const s=`${t.text||''} ${(t.drivers||[]).join(' ')}`.toLowerCase();
-  if(/military|missile|strike|drone|troop|navy/.test(s)) return '⚔'; if(/cyber|hack|malware/.test(s)) return '⌁'; if(/oil|finance|market|trade/.test(s)) return '◈'; if(/earthquake|storm|flood|disaster/.test(s)) return '△'; return '●';
+  $('regions').innerHTML = regions.slice(0,5).map((r,i)=>`
+    <div class="rank">
+      <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
+      <div><div class="rankname">${r.name}</div><div class="rankmeta">Regional risk · ${r.trend || 'Watch'} ${r.change ? `• 24h ${r.change}` : ''}</div></div>
+      <div class="rankscore">${Math.round(r.score)}</div>
+      <div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div>
+    </div>
+  `).join('');
 }
 function renderTimeline(timeline){
   const list = (timeline || []).slice(0,5);
   $('timelineCount').textContent = `${list.length} SIGNALS`;
-  $('timeline').innerHTML = list.map(t=>{ const tags=[...(t.regions||[]).slice(0,1),...(t.drivers||[]).slice(0,1)]; const tagHtml=tags.map(tag=>`<span>${escapeHtml(tag)}</span>`).join(''); const body=`<div class="timeline-icon">${timelineIcon(t)}</div><div><div class="timeline-tags">${tagHtml}</div><p>${escapeHtml(t.text||'')}</p></div>`; return t.url ? `<a class="timeline-row timeline-link" href="${escapeAttr(t.url)}" target="_blank" rel="noopener noreferrer"><time>${escapeHtml(t.time||'')}</time>${body}</a>` : `<div class="timeline-row"><time>${escapeHtml(t.time||'')}</time>${body}</div>`; }).join('');
+  $('timeline').innerHTML = list.map(t=>`<div class="timeline-row"><time>${t.time}</time><p>${t.text}</p></div>`).join('');
 }
 function renderMetrics(m){
   $('metricConflicts').textContent = m.conflicts || '7';
@@ -466,7 +250,6 @@ function renderMetrics(m){
   $('metricCyberSub').textContent = m.cyberSub || 'LOW SURGE';
   $('metricLogistics').textContent = m.logistics || 'STABLE';
   $('metricLogisticsSub').textContent = m.logisticsSub || 'CONTAINED';
-  if($('metricsNote')) $('metricsNote').textContent = m.note || 'These restate the keyword-driver scores above; there is no separate flight-tracking, cyber-threat, or shipping feed.';
 }
 function renderCalc(data){
   const calc = data.calculation || {};
@@ -486,20 +269,8 @@ function renderCalc(data){
     <div class="calc-total"><span>GLOBAL SYNC</span><strong>${Number(calc.globalNormalization || 0).toFixed(1)}</strong></div>
     <div class="calc-total"><span>TOTAL ADJUSTMENT</span><strong>${Number(containment).toFixed(1)}</strong></div>
     <div class="calc-total"><span>FINAL SCORE</span><strong>${Math.round(final)}</strong></div>
-    ${renderAdjustmentReasons(calc.adjustmentReasons || [])}
     ${renderReasoning(calc.reasoning || [])}
   `;
-}
-function renderAdjustmentReasons(reasons){
-  if(!Array.isArray(reasons) || !reasons.length) return '';
-  // FIX (transparency): previously the -1.0 / -3.0 / +0.0 adjustment numbers
-  // shown in "WHY SCORE?" had no explanation attached — the person had to
-  // trust the number with no way to see which rule produced it. Each reason
-  // string here corresponds to one specific if/else branch that actually
-  // fired in stabilityAdjustment / duplicateNoiseReduction /
-  // globalSynchronizationAdjustment on the backend, phrased in plain language.
-  return `<div class="reasoning-title">WHY THESE ADJUSTMENTS</div>` +
-    `<ul class="adjustment-reasons">${reasons.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ul>`;
 }
 function renderReasoning(reasoning){
   if(!Array.isArray(reasoning) || !reasoning.length) return '';
@@ -568,55 +339,68 @@ function generatePost(lang='en'){
   const d = currentData || fallback;
   const event = d.topEvent || fallback.topEvent;
   const regions = (d.regions || fallback.regions).slice(0,3);
+  const tags = dynamicTags(d, lang).join(' ');
   const score = d.score ?? fallback.score;
   const state = d.state || stateFromScore(score);
   const outlook = d.outlook24h ? `\n24H Outlook: ${d.outlook24h}` : '';
 
-  // FIX (duplicate hashtags): the AI-generated post text (xPostGlobal /
-  // xPostJapanese) sometimes already contains hashtags of its own, since
-  // nothing stops the model from adding them even though a separate
-  // `hashtags` field was also requested. This function used to blindly
-  // append the full dynamicTags() list regardless, so any tag the AI text
-  // already included (e.g. #ORACLE) would show up twice in the final post.
-  // Now we drop any tag from the appended list that's already present
-  // (case-insensitive) in the base post text.
-  const dedupeTagsAgainstText = (text, tagList) => {
-    const lower = String(text || '').toLowerCase();
-    return tagList.filter(tag => !lower.includes(tag.toLowerCase()));
-  };
-
   if(lang === 'ja'){
-    if(d.xPostJapanese && typeof d.xPostJapanese === 'string'){
-      const base = d.xPostJapanese.trim();
-      const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
-      return `${base}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
-    }
+    if(d.xPostJapanese && typeof d.xPostJapanese === 'string') return `${d.xPostJapanese.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
     const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-    const base = `ORACLE | World Risk Intelligence\n\n\u4e16\u754c\u30ea\u30b9\u30af\u6307\u6570: ${score}\uff08${state}\uff09${outlook ? outlook.replace('24H Outlook:', '\n24\u6642\u9593\u898b\u901a\u3057:') : ''}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.`;
-    const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
-    return `${base}\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    return `ORACLE | World Risk Intelligence\n\n世界リスク指数: ${score}（${state}）${outlook ? outlook.replace('24H Outlook:', '\n24時間見通し:') : ''}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
   }
 
   const aiPost = d.xPostGlobal || d.xPost;
   if(aiPost && typeof aiPost === 'string'){
-    const base = aiPost.trim();
-    const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
-    return `${base}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    return `${aiPost.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
   }
 
   const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-  const base = `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${score} (${state})${outlook}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.`;
-  const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
-  return `${base}\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${score} (${state})${outlook}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`; 
 }
+
+function ensureAdminPanel(){
+  let panel = $('adminPanel');
+  if(panel) return panel;
+  const footer = document.querySelector('.footer');
+  panel = document.createElement('section');
+  panel.className = 'admin';
+  panel.id = 'adminPanel';
+  panel.innerHTML = `
+    <div class="card-head"><b>ADMIN TERMINAL</b><span>PRIVATE MODE</span></div>
+    <div class="admin-buttons">
+      <button id="refreshBtn" type="button">REFRESH NOW</button>
+      <button id="makeGlobalPostBtn" type="button">GLOBAL POST</button>
+      <button id="makeJapanesePostBtn" type="button">JAPANESE POST</button>
+      <button id="copyPostBtn" type="button">COPY</button>
+    </div>
+    <textarea id="postText" rows="9" placeholder="Generated post will appear here."></textarea>
+    <div id="copyStatus" class="copy-status" aria-live="polite"></div>
+    <pre id="debugBox"></pre>`;
+  if(footer) footer.before(panel); else document.querySelector('main')?.append(panel);
+  return panel;
+}
+
+async function copyGeneratedPost(){
+  const box = $('postText');
+  const status = $('copyStatus');
+  const text = box?.value || generatePost('en');
+  if(box && !box.value) box.value = text;
+  try{
+    await navigator.clipboard.writeText(text);
+    if(status) status.textContent = 'COPIED';
+  }catch{
+    if(box){ box.focus(); box.select(); document.execCommand('copy'); }
+    if(status) status.textContent = 'COPIED';
+  }
+  setTimeout(()=>{ if(status) status.textContent=''; }, 1800);
+}
+
 function setup(){
   const params = new URLSearchParams(location.search);
-  // Reverted per request: no ADMIN_TOKEN / server round-trip needed anymore.
-  // Any `?admin=...` (any value) in the URL unlocks the panel client-side.
-  // NOTE: this means anyone who has or guesses this URL can open the admin
-  // panel — there is no real access control here. Acceptable for a personal,
-  // non-commercial project as long as the URL itself isn't shared publicly.
-  if(params.get('admin')) $('adminPanel')?.classList.add('open');
+  const isAdmin = params.get('admin') === 'doom';
+  const panel = isAdmin ? ensureAdminPanel() : $('adminPanel');
+  if(isAdmin) panel?.classList.add('open');
   $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
   $('closeModal').addEventListener('click', ()=> $('scoreModal').classList.remove('open'));
   $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
@@ -624,14 +408,7 @@ function setup(){
   $('refreshBtn')?.addEventListener('click', loadRisk);
   $('makeGlobalPostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('en'));
   $('makeJapanesePostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('ja'));
-  const advancedToggle = $('advancedToggle');
-  const advancedDetail = $('advancedDetail');
-  if(advancedToggle && advancedDetail){
-    const setAdvanced = open => { advancedDetail.hidden = !open; advancedToggle.setAttribute('aria-expanded', String(open)); advancedToggle.textContent = open ? 'HIDE TECHNICAL DETAIL' : 'SHOW TECHNICAL DETAIL'; };
-    setAdvanced(window.innerWidth > 720);
-    advancedToggle.addEventListener('click', ()=>setAdvanced(advancedDetail.hidden));
-  }
-  $('copyPostBtn')?.addEventListener('click', async ()=>{ await navigator.clipboard.writeText($('postText').value || generatePost('en')); });
+  $('copyPostBtn')?.addEventListener('click', copyGeneratedPost);
   loadRisk();
   setInterval(loadRisk, 60000);
 }
