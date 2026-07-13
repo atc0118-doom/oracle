@@ -1004,14 +1004,24 @@ function buildPayload(analyzed, articles, llm, meta={}){
   // text next to real-looking timestamps was the most misleading part of the
   // original output.
   const realArticles = (articles||[]).filter(a => a.sourceType !== 'baseline-placeholder');
+  // FIX (timeline noise): the timeline used to show the most recent N articles
+  // regardless of whether they matched ANY risk category or region — e.g. an
+  // AP obituary piece mentioning "foreign policy" was appearing next to real
+  // military/diplomatic signals just because it was recent, with no keyword
+  // relevance at all. Now an article only qualifies for the timeline if it
+  // matched at least one category or region during scoring (same match data
+  // timelineClassification already computes), so off-topic recent articles
+  // are excluded instead of being presented as risk signals.
   const timeline = [...realArticles]
-    .sort((a,b)=>{
-      const ta = new Date(a?.seen || 0).getTime();
-      const tb = new Date(b?.seen || 0).getTime();
+    .map((a,i)=>({ article:a, index:i, cls: timelineClassification(a, analyzed) }))
+    .filter(({cls}) => (cls.regions && cls.regions.length) || (cls.drivers && cls.drivers.length))
+    .sort((x,y)=>{
+      const ta = new Date(x.article?.seen || 0).getTime();
+      const tb = new Date(y.article?.seen || 0).getTime();
       return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
     })
     .slice(0,5)
-    .map((a,i)=>{ const cls = timelineClassification(a, analyzed); return { time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting', ...cls }; });
+    .map(({article:a, index:i, cls})=>({ time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting', ...cls }));
 
   const aiOk = Boolean(llm && !llm.error);
   const corpus = (articles||[]).map(a=>a.title).join(' ');
@@ -1089,11 +1099,18 @@ function buildPayload(analyzed, articles, llm, meta={}){
     regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend, signals:round1(r.raw || r.count || 0), sources:r.sources || 0, articles:r.articles || 0, terms:r.terms || [], freshness:r.freshness || 0, breakdown:r.breakdown || {} })),
     inactiveRegions: (analyzed.inactiveRegions || []).map(r=>({ name:r.name, trend:'No verified activity' })),
     timeline: timeline.length ? timeline : [{time: isBaseline ? 'N/A' : 'NOW', text: isBaseline ? 'No live signals available.' : 'Monitoring active.'}],
+    // FIX (honesty): these four tiles used to read like output from dedicated
+    // feeds (a flight tracker, a cyber-threat feed, a shipping/logistics feed).
+    // There are no such feeds — every value here is the SAME keyword-matched
+    // Military/Cyber/Logistics driver score already shown in "WHY SCORE?",
+    // just re-labeled. `metricsNote` lets the frontend say that plainly next
+    // to the tiles instead of implying independent monitoring sources.
     metrics:{
       conflicts: String(Math.max(7, analyzed.regions.filter(r=>r.score>35).length + 4)), conflictsSub:'+1 / 24H · MONITORED',
       flights: analyzed.drivers.Military > 55 ? 'ELEVATED' : 'WATCH', flightsSub:'PUBLIC SIGNALS',
       cyber: analyzed.drivers.Cyber > 50 ? 'MEDIUM' : 'WATCH', cyberSub: analyzed.drivers.Cyber > 50 ? 'SURGE DETECTED' : 'LOW SURGE',
-      logistics: analyzed.drivers.Logistics > 45 ? 'WATCH' : 'STABLE', logisticsSub: analyzed.drivers.Logistics > 45 ? 'PRESSURE' : 'CONTAINED'
+      logistics: analyzed.drivers.Logistics > 45 ? 'WATCH' : 'STABLE', logisticsSub: analyzed.drivers.Logistics > 45 ? 'PRESSURE' : 'CONTAINED',
+      note: 'These tiles restate the Military / Cyber / Logistics keyword-driver scores above — there is no separate flight-tracking, cyber-threat, or shipping feed behind them.'
     }
   };
 }
@@ -1132,6 +1149,6 @@ function fallbackPayload(error){
     topEvent:{ title:'No live top event available', summary:'No verified public signals are available due to an internal error.', source:'ORACLE System', url:'https://www.gdeltproject.org/' },
     drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28, adjustmentReasons:['Fallback mode: adjustment reasons are not available because live scoring did not run.'] },
     regions:[{name:'Ukraine',score:44,change:'+1',trend:'Watch'},{name:'Taiwan Strait',score:39,change:'0',trend:'Watch'},{name:'Middle East',score:37,change:'0',trend:'Stable'},{name:'South China Sea',score:31,change:'0',trend:'Stable'},{name:'Korea',score:25,change:'0',trend:'Stable'}],
-    timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED' }
+    timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED', note:'Fallback mode: no scoring ran, so these tiles are fixed placeholders, not even keyword-derived values.' }
   };
 }
