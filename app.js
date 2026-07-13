@@ -53,6 +53,119 @@ function stateFromScore(score){
   if(score >= 30) return 'WATCH';
   return 'STABLE';
 }
+// ---------------------------------------------------------------------------
+// Daily-return features: visit streak, score history, and a "what changed
+// since last time you looked" summary. All client-side (localStorage), no
+// backend change needed — this is purely about making a repeat visit feel
+// worthwhile, not about the accuracy of the score itself.
+// ---------------------------------------------------------------------------
+const HISTORY_KEY = 'oracle_score_history_v1';
+const STREAK_KEY = 'oracle_streak_v1';
+const MAX_HISTORY_DAYS = 30;
+
+function todayStamp(){
+  // Use JST calendar day so the streak lines up with the JST timestamps shown elsewhere.
+  const now = new Date();
+  const jst = new Date(now.toLocaleString('en-US', { timeZone:'Asia/Tokyo' }));
+  return `${jst.getFullYear()}-${String(jst.getMonth()+1).padStart(2,'0')}-${String(jst.getDate()).padStart(2,'0')}`;
+}
+function daysBetweenStamps(a, b){
+  return Math.round((new Date(b) - new Date(a)) / 86400000);
+}
+
+function loadHistory(){
+  try{ return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }catch(_){ return []; }
+}
+function saveHistory(history){
+  try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-MAX_HISTORY_DAYS))); }catch(_){ /* storage unavailable, skip silently */ }
+}
+
+function updateStreak(stamp){
+  let streak;
+  try{ streak = JSON.parse(localStorage.getItem(STREAK_KEY) || 'null'); }catch(_){ streak = null; }
+  if(!streak){
+    streak = { lastDate: stamp, count: 1 };
+  }else if(streak.lastDate === stamp){
+    // already counted today
+  }else{
+    const gap = daysBetweenStamps(streak.lastDate, stamp);
+    streak = gap === 1 ? { lastDate: stamp, count: streak.count + 1 } : { lastDate: stamp, count: 1 };
+  }
+  try{ localStorage.setItem(STREAK_KEY, JSON.stringify(streak)); }catch(_){ /* ignore */ }
+  return streak.count;
+}
+
+function recordVisitAndDiff(data){
+  const stamp = todayStamp();
+  const score = clamp(data.score, 0, 100);
+  const state = data.state || stateFromScore(score);
+  const topRegion = (data.regions && data.regions[0] && data.regions[0].name) || 'Global';
+
+  const history = loadHistory();
+  const last = history[history.length - 1];
+
+  // One entry per calendar day: update today's entry in place on repeat loads,
+  // otherwise append a fresh day so the sparkline reflects one point per day.
+  if(last && last.date === stamp){
+    last.score = score; last.state = state; last.topRegion = topRegion;
+  }else{
+    history.push({ date: stamp, score, state, topRegion });
+  }
+  const previousEntry = (last && last.date === stamp) ? history[history.length - 2] : last;
+  saveHistory(history);
+
+  const streakCount = updateStreak(stamp);
+  const streakLabel = $('streakLabel');
+  if(streakLabel) streakLabel.textContent = `${streakCount} DAY${streakCount === 1 ? '' : 'S'} STREAK`;
+
+  const diffEl = $('dailyDiffText');
+  if(diffEl){
+    if(!previousEntry){
+      diffEl.textContent = `First visit logged today. Come back tomorrow to see how the index moved.`;
+    }else{
+      const delta = score - previousEntry.score;
+      const dir = delta > 0 ? 'up' : delta < 0 ? 'down' : 'unchanged';
+      const deltaText = delta === 0 ? 'unchanged' : `${dir} ${Math.abs(delta)} pts`;
+      const regionNote = previousEntry.topRegion && previousEntry.topRegion !== topRegion
+        ? ` Top region shifted from ${previousEntry.topRegion} to ${topRegion}.`
+        : '';
+      const stateNote = previousEntry.state && previousEntry.state !== state
+        ? ` Status moved from ${previousEntry.state} to ${state}.`
+        : '';
+      diffEl.textContent = `Since your last visit (${previousEntry.date}): index ${deltaText} (${previousEntry.score} → ${score}).${stateNote}${regionNote}`;
+    }
+  }
+
+  renderSparkline(history);
+}
+
+function renderSparkline(history){
+  const svg = $('sparkline');
+  if(!svg) return;
+  const points = history.slice(-MAX_HISTORY_DAYS);
+  if(points.length < 2){
+    svg.innerHTML = '';
+    if($('sparklineFrom')) $('sparklineFrom').textContent = points[0]?.date || '—';
+    return;
+  }
+  const w = 300, h = 60, pad = 4;
+  const scores = points.map(p=>p.score);
+  const min = Math.min(...scores), max = Math.max(...scores);
+  const range = Math.max(1, max - min);
+  const stepX = (w - pad*2) / (points.length - 1);
+  const coords = points.map((p,i)=>{
+    const x = pad + i*stepX;
+    const y = h - pad - ((p.score - min) / range) * (h - pad*2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const last = coords[coords.length-1].split(',');
+  svg.innerHTML = `
+    <polyline points="${coords.join(' ')}" fill="none" stroke="#c9ab45" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${last[0]}" cy="${last[1]}" r="3" fill="#c9ab45"/>
+  `;
+  if($('sparklineFrom')) $('sparklineFrom').textContent = `${points[0].date} · ${points[0].score}`;
+}
+
 function render(data){
   currentData = data || fallback;
   const score = clamp(currentData.score, 0, 100);
@@ -81,10 +194,16 @@ function render(data){
   const statusText = currentData.dataStatus || (currentData.mode === 'live' ? 'LIVE SOURCES' : currentData.mode === 'degraded' ? 'CACHED / DEGRADED' : 'BASELINE');
   if($('dataStatus')) $('dataStatus').textContent = statusText;
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
-  if($('cacheNote')){
+  // FIX (honesty): the headline used to hardcode "60 SEC" (the browser's own
+  // auto-refresh timer) right above a footnote admitting the real server
+  // cache is 10 minutes — two numbers on screen at once describing the same
+  // thing differently. The real cache duration is now the headline value.
+  if($('pollInterval') || $('cacheNote')){
     const ttl = currentData.cacheTtlMinutes;
-    $('cacheNote').textContent = ttl
-      ? `Source data may be cached up to ${ttl} min`
+    const ttlLabel = ttl ? `${ttl} MIN` : '10 MIN';
+    if($('pollInterval')) $('pollInterval').textContent = ttlLabel;
+    if($('cacheNote')) $('cacheNote').textContent = ttl
+      ? `Source data is cached up to ${ttl} min server-side`
       : 'Source cache duration unknown';
   }
 
@@ -99,6 +218,7 @@ function render(data){
   renderTimeline(currentData.timeline || fallback.timeline);
   renderMetrics(currentData.metrics || fallback.metrics);
   renderCalc(currentData);
+  recordVisitAndDiff(currentData);
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
 }
@@ -320,6 +440,7 @@ function renderMetrics(m){
   $('metricCyberSub').textContent = m.cyberSub || 'LOW SURGE';
   $('metricLogistics').textContent = m.logistics || 'STABLE';
   $('metricLogisticsSub').textContent = m.logisticsSub || 'CONTAINED';
+  if($('metricsNote')) $('metricsNote').textContent = m.note || 'These restate the keyword-driver scores above; there is no separate flight-tracking, cyber-threat, or shipping feed.';
 }
 function renderCalc(data){
   const calc = data.calculation || {};

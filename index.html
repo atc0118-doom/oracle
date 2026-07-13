@@ -49,6 +49,13 @@
       <p class="brief" id="brief">ORACLE is collecting public signals and preparing an assessment.</p>
     </section>
 
+    <section class="card reveal daily-card" id="dailyCard">
+      <div class="card-head"><b>SINCE YOUR LAST VISIT</b><span id="streakLabel">— DAY STREAK</span></div>
+      <p id="dailyDiffText">Loading your visit history…</p>
+      <div class="sparkline-wrap"><svg id="sparkline" viewBox="0 0 300 60" preserveAspectRatio="none"></svg></div>
+      <div class="sparkline-labels"><span id="sparklineFrom">—</span><span id="sparklineTo">TODAY</span></div>
+    </section>
+
     <section class="grid">
       <article class="card facts reveal">
         <div class="card-head"><b>FACTS</b><span>PUBLIC REPORTING</span></div>
@@ -133,9 +140,10 @@
 
     <section class="metrics reveal">
       <div class="metric"><span>ACTIVE CONFLICTS</span><strong id="metricConflicts">--</strong><em id="metricConflictsSub">MONITORED</em></div>
-      <div class="metric"><span>MILITARY FLIGHTS</span><strong id="metricFlights">WATCH</strong><em id="metricFlightsSub">PUBLIC SIGNALS</em></div>
-      <div class="metric"><span>CYBER ALERTS</span><strong id="metricCyber">WATCH</strong><em id="metricCyberSub">LOW SURGE</em></div>
-      <div class="metric"><span>LOGISTICS</span><strong id="metricLogistics">STABLE</strong><em id="metricLogisticsSub">CONTAINED</em></div>
+      <div class="metric"><span>MILITARY SIGNAL</span><strong id="metricFlights">WATCH</strong><em id="metricFlightsSub">PUBLIC SIGNALS</em></div>
+      <div class="metric"><span>CYBER SIGNAL</span><strong id="metricCyber">WATCH</strong><em id="metricCyberSub">LOW SURGE</em></div>
+      <div class="metric"><span>LOGISTICS SIGNAL</span><strong id="metricLogistics">STABLE</strong><em id="metricLogisticsSub">CONTAINED</em></div>
+      <p class="metrics-note" id="metricsNote">These restate the keyword-driver scores above; there is no separate flight-tracking, cyber-threat, or shipping feed.</p>
     </section>
 
     <section class="sources reveal">
@@ -145,7 +153,7 @@
 
     <section class="sync reveal">
       <div><span>LAST SYNC</span><strong id="lastSync">--</strong></div>
-      <div><span>POLL INTERVAL</span><strong>60 SEC</strong><em id="cacheNote">Source data may be cached up to 10 min</em></div>
+      <div><span>DATA REFRESH</span><strong id="pollInterval">10 MIN</strong><em id="cacheNote">Source data is cached up to 10 min server-side</em></div>
       <div><span>SOURCE HEALTH</span><strong id="sourceHealth">--%</strong></div>
       <div><span>AI MODE</span><strong id="aiMode">RULE BASED</strong></div>
     </section>
