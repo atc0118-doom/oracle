@@ -135,21 +135,21 @@
     <section class="admin" id="adminPanel">
       <div class="card-head"><b>ADMIN TERMINAL</b><span>PRIVATE MODE</span></div>
       <div class="admin-buttons">
-        <button id="refreshBtn">REFRESH NOW</button>
-        <button id="makeGlobalPostBtn">GLOBAL POST</button>
-        <button id="makeJapanesePostBtn">JAPANESE POST</button>
-        <button id="copyPostBtn">COPY</button>
+        <button id="refreshBtn" type="button">REFRESH NOW</button>
+        <button id="makeGlobalPostBtn" type="button">GLOBAL POST</button>
+        <button id="makeJapanesePostBtn" type="button">JAPANESE POST</button>
+        <button id="copyPostBtn" type="button">COPY</button>
       </div>
       <textarea id="postText" rows="9" placeholder="Generated post will appear here."></textarea>
       <pre id="debugBox"></pre>
     </section>
 
-    <footer class="footer">ORACLE Intelligence Engine v13.0 Evidence Core · Evidence-first drivers · Live/cache/baseline source status · Traceable scoring · Evidence strength, not AI certainty. This platform provides situational awareness and is not a prediction system.</footer>
+    <footer class="footer">ORACLE Intelligence Engine v13.0 Evidence Core · Evidence-first drivers · Live/cache/baseline source status · Traceable scoring · Evidence strength, not AI certainty. This platform provides situational awareness and is not a prediction system. Signals are detected via automated keyword matching on public headlines, not editorial or semantic review, and may occasionally misclassify unrelated content (satire, opinion, human interest) as risk signals.</footer>
   </main>
 
   <div class="modal" id="scoreModal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true">
-      <button class="close" id="closeModal" type="button">×</button>
+      <button class="close" id="closeModal" type="button" aria-label="Close dialog">×</button>
       <h3>HOW WE CALCULATE</h3>
       <div id="calcDetail"></div>
       <p class="modal-note">Scores combine public signals, source confidence, weighted risk drivers, and AI-assisted reasoning. ORACLE separates facts, assessment, and outlook for reliability.</p>
