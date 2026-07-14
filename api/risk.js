@@ -118,13 +118,29 @@ async function loadArticles(){
 }
 
 async function fetchWithTimeout(url, options={}){
-  const controller = new AbortController();
-  const timeout = setTimeout(()=>controller.abort(), options.timeout || FETCH_TIMEOUT_MS);
-  try{
-    return await fetch(url, { ...options, signal:controller.signal });
-  }finally{
-    clearTimeout(timeout);
+  // FIX (reliability): previously a single failed/timed-out request meant
+  // that source was down for the whole cycle, even for a one-off network
+  // blip (common on serverless cold starts hitting rate-limited public
+  // APIs). This doesn't change the honesty guarantees at all — isBaseline/
+  // degraded still kick in exactly the same way if a source is genuinely
+  // down — it just gives each source one quick retry before giving up, so
+  // fewer cycles unnecessarily fall back to cache/baseline due to a single
+  // transient hiccup.
+  const attempts = options.retries ?? 1;
+  let lastErr;
+  for(let attempt = 0; attempt <= attempts; attempt++){
+    const controller = new AbortController();
+    const timeout = setTimeout(()=>controller.abort(), options.timeout || FETCH_TIMEOUT_MS);
+    try{
+      return await fetch(url, { ...options, signal:controller.signal });
+    }catch(err){
+      lastErr = err;
+      if(attempt < attempts) await new Promise(res=>setTimeout(res, 250));
+    }finally{
+      clearTimeout(timeout);
+    }
   }
+  throw lastErr;
 }
 
 async function fetchGdelt(){
@@ -1255,3 +1271,21 @@ function fallbackPayload(error){
     timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED', note:'Fallback mode: no scoring ran, so these tiles are fixed placeholders, not even keyword-derived values.' }
   };
 }
+
+// FIX: named exports added purely so pure/testable logic can be unit-tested
+// (see /tests/risk.test.mjs) without touching the default export Vercel
+// actually invokes as the request handler — this changes no runtime
+// behavior of the API route itself.
+export {
+  countOccurrences,
+  clamp,
+  round1,
+  stateFromScore,
+  dedupeArticles,
+  stabilityAdjustment,
+  globalSynchronizationAdjustment,
+  duplicateNoiseReduction,
+  normalizeOutlook,
+  getVerifiedSources,
+  SATIRE_INDICATOR_TERMS
+};
