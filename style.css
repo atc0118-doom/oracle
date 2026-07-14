@@ -41,3 +41,14 @@
 .sources b.limited{opacity:.55}
 .sources b.limited i{background:var(--yellow);box-shadow:0 0 8px rgba(201,171,69,.6)}
 .metrics-note{grid-column:1/-1;margin:2px 0 0;color:var(--muted);font-size:11px;line-height:1.55;letter-spacing:.03em}
+
+/* FIX: defensive rule. The duplicate "verified sources" list bug was caused
+   by .source-pillset{display:flex} silently overriding the native
+   [hidden]{display:none} behavior on #verifiedSources (a class selector on
+   display always wins over the browser's UA-stylesheet default for
+   [hidden], regardless of stylesheet order). #verifiedSources itself has
+   since been removed as redundant, but this rule is kept so any element
+   anyone marks `hidden` in the future actually stays hidden, instead of
+   silently reappearing the next time someone adds a `display` rule that
+   happens to match it. */
+[hidden]{display:none!important}
