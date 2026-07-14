@@ -318,10 +318,24 @@ async function loadRisk(){
 }
 function textPool(d){
   const event = d.topEvent || fallback.topEvent;
+  // FIX: previously this pool also included d.facts, d.keyDrivers, d.watchNext,
+  // and region names. That was the actual cause of "irrelevant hashtags":
+  // - d.facts always contains a fixed boilerplate sentence that literally
+  //   spells out "military, diplomatic, cyber, logistics, finance, and
+  //   disaster categories" verbatim on every single cycle, regardless of
+  //   what's actually happening — so #Logistics, #Finance, #Military, etc.
+  //   were firing on every post whether or not those topics were real.
+  // - d.keyDrivers / d.watchNext are literally driver label arrays (e.g.
+  //   "Logistics", "Finance") — the label itself trivially matches the same
+  //   regex used to decide whether to tag that category, so merely listing
+  //   a driver (even at a low, unremarkable score) guaranteed its hashtag.
+  // - region names (d.regions.map(r=>r.name)) caused the same self-matching
+  //   for every active region regardless of how prominent it actually was.
+  // Now the pool is built only from text that's genuinely specific to what
+  // happened this cycle: the actual top event, the AI's assessment/brief,
+  // and the outlook — not fixed labels or boilerplate.
   return [
-    event.title, event.summary, d.assessment, d.brief,
-    ...(d.regions || []).map(r=>r.name),
-    ...(d.facts || []), ...(d.keyDrivers || []), ...(d.watchNext || []), d.outlookText
+    event.title, event.summary, d.assessment, d.brief, d.outlookText
   ].join(' ').toLowerCase();
 }
 
@@ -341,47 +355,100 @@ function uniqueTags(tags, limit=16){
 
 function dynamicTags(d, lang='en'){
   const t = textPool(d);
-  const baseGlobal = ['#ORACLE','#WorldRiskIndex','#GlobalRisk','#AIAnalysis','#OSINT'];
-  const baseJapanese = ['#ORACLE','#世界情勢','#国際情勢','#AI分析','#世界リスク'];
+  // FIX: previously up to 16 tags were allowed (5-7 base + up to 3 per
+  // topical match, several categories could match at once). Every hashtag
+  // costs real characters against X's 280-character limit, and the old
+  // template was already ~900 characters before hashtags were even counted.
+  // Cut to a firm max of 4 total: 2 base + up to 2 topical, so hashtags
+  // can't silently eat the post's character budget.
+  const baseGlobal = ['#ORACLE','#WorldRiskIndex'];
+  const baseJapanese = ['#ORACLE','#世界リスク'];
   const topical = [];
 
-  if(/ukraine|kyiv|kiev|russia|nato/.test(t)) topical.push('#Ukraine','#Russia','#NATO');
-  if(/taiwan|taipei|strait|china|south china sea/.test(t)) topical.push('#Taiwan','#China','#SouthChinaSea');
-  if(/iran|israel|gaza|middle east|hezbollah|houthi|red sea/.test(t)) topical.push('#Iran','#Israel','#MiddleEast');
-  if(/cyber|hack|malware|ransomware|data breach|ddos/.test(t)) topical.push('#CyberSecurity','#CyberAttack');
-  if(/earthquake|volcano|tsunami|flood|wildfire|storm|hurricane|typhoon/.test(t)) topical.push('#Earthquake','#Disaster','#USGS');
-  if(/shipping|port|tanker|supply chain|logistics|vessel|canal/.test(t)) topical.push('#SupplyChain','#Logistics','#Maritime');
-  if(/oil|gas|market|inflation|stocks|bond|currency|finance/.test(t)) topical.push('#Markets','#Energy','#Finance');
-  if(/military|missile|drone|airstrike|troops|navy|air force|strike/.test(t)) topical.push('#Military','#Defense','#Geopolitics');
+  if(/ukraine|kyiv|kiev|russia|nato/.test(t)) topical.push('#Ukraine');
+  // FIX: removed the bare word 'strait' from Taiwan matching — the same
+  // over-matching bug already fixed in risk.js's REGION_KEYWORDS. A generic
+  // "strait" also appears in "Strait of Hormuz" (Middle East), which was
+  // adding a #Taiwan tag to stories that had nothing to do with Taiwan.
+  if(/taiwan|taipei|taiwan strait|strait of taiwan|formosa strait|south china sea/.test(t)) topical.push('#Taiwan');
+  if(/iran|israel|gaza|middle east|hezbollah|houthi|red sea/.test(t)) topical.push('#MiddleEast');
+  if(/cyber|hack|malware|ransomware|data breach|ddos/.test(t)) topical.push('#CyberSecurity');
+  if(/earthquake|volcano|tsunami|flood|wildfire|storm|hurricane|typhoon/.test(t)) topical.push('#Disaster');
+  if(/shipping|port|tanker|supply chain|logistics|vessel|canal/.test(t)) topical.push('#SupplyChain');
+  if(/oil|gas|market|inflation|stocks|bond|currency|finance/.test(t)) topical.push('#Markets');
+  if(/military|missile|drone|airstrike|troops|navy|air force|strike/.test(t)) topical.push('#Military');
 
   if(lang === 'ja'){
-    return uniqueTags([...baseJapanese, ...topical, '#地政学', '#危機管理'], 15);
+    return uniqueTags([...baseJapanese, ...topical], 4);
   }
-  return uniqueTags([...baseGlobal, ...topical, '#Geopolitics', '#Intelligence'], 16);
+  return uniqueTags([...baseGlobal, ...topical], 4);
+}
+
+// FIX: previously the disclaimer only lived in the page footer, which
+// doesn't travel with a screenshot or a copied post. Per discussion, the
+// safest place for it is baked into the post text itself, appended right
+// before the link/hashtags on every single generated post — AI-generated
+// or fallback, English or Japanese — so it can't be forgotten or edited out
+// by accident. Kept short since it competes with the body for the same
+// 280-character budget.
+const POST_DISCLAIMER_EN = 'Automated headline analysis, not a forecast.';
+const POST_DISCLAIMER_JA = '見出しの自動分析であり、予測ではありません。';
+const SITE_URL = 'https://oracle-rho-flax.vercel.app';
+const X_POST_LIMIT = 280;
+
+// FIX: approximates X's character counting well enough for client-side
+// budgeting — any URL counts as a flat 23 characters (X wraps all links in
+// its t.co shortener, regardless of actual length), everything else counts
+// as 1 character per code point. This is not byte-perfect (X's real counter
+// also weight CJK characters and some Unicode ranges differently), so a
+// safety margin is intentional here, not just precision.
+function xWeightedLength(str){
+  const urlRe = /https?:\/\/\S+/g;
+  const urlCount = (str.match(urlRe) || []).length;
+  const withoutUrls = str.replace(urlRe, '');
+  return withoutUrls.length + urlCount * 23;
 }
 
 function generatePost(lang='en'){
   const d = currentData || fallback;
   const event = d.topEvent || fallback.topEvent;
-  const regions = (d.regions || fallback.regions).slice(0,3);
+  const topRegion = (d.regions || fallback.regions)[0];
   const tags = dynamicTags(d, lang).join(' ');
   const score = d.score ?? fallback.score;
   const state = d.state || stateFromScore(score);
-  const outlook = d.outlook24h ? `\n24H Outlook: ${d.outlook24h}` : '';
+
+  // FIX: this used to assemble a multi-section report (Top Event / Hot
+  // Regions / AI Assessment / "Continuously updated.") that ran to several
+  // hundred characters on its own, then added a disclaimer, link, and up to
+  // 16 hashtags on top — routinely landing around 900 characters against a
+  // 280-character limit. The AI-generated path is now prompted for a much
+  // shorter body (see risk.js), and this fallback path (used when the AI
+  // call didn't return a usable post) is now a single compact line instead
+  // of a full report. A hard truncation below is the actual guarantee,
+  // this compact template just means truncation rarely has to do much work.
+  const finish = (body, disclaimer) => {
+    const tail = `\n\n${disclaimer}\n\n${SITE_URL}\n\n${tags}`;
+    const tailWeight = xWeightedLength(tail);
+    const bodyBudget = Math.max(20, X_POST_LIMIT - tailWeight);
+    const trimmedBody = xWeightedLength(body) > bodyBudget
+      ? body.slice(0, bodyBudget - 1).replace(/\s+\S*$/, '') + '…'
+      : body;
+    return `${trimmedBody}${tail}`;
+  };
 
   if(lang === 'ja'){
-    if(d.xPostJapanese && typeof d.xPostJapanese === 'string') return `${d.xPostJapanese.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
-    const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-    return `ORACLE | World Risk Intelligence\n\n世界リスク指数: ${score}（${state}）${outlook ? outlook.replace('24H Outlook:', '\n24時間見通し:') : ''}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    if(d.xPostJapanese && typeof d.xPostJapanese === 'string') return finish(d.xPostJapanese.trim(), POST_DISCLAIMER_JA);
+    const body = `世界リスク指数 ${score}（${state}）。最大の焦点: ${topRegion?.name || 'Global'}。${event.title}`;
+    return finish(body, POST_DISCLAIMER_JA);
   }
 
   const aiPost = d.xPostGlobal || d.xPost;
   if(aiPost && typeof aiPost === 'string'){
-    return `${aiPost.trim()}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
+    return finish(aiPost.trim(), POST_DISCLAIMER_EN);
   }
 
-  const regionText = regions.map((r,i)=>`${i+1}. ${r.name} ${Math.round(r.score)}`).join('\n');
-  return `ORACLE | World Risk Intelligence\n\nGlobal Risk Index: ${score} (${state})${outlook}\n\nTop Event\n${event.title}\n${event.summary || ''}\n\nHot Regions\n${regionText}\n\nAI Assessment\n${d.assessment || fallback.assessment}\n\nContinuously updated.\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`; 
+  const body = `Global Risk Index ${score} (${state}). Top focus: ${topRegion?.name || 'Global'}. ${event.title}`;
+  return finish(body, POST_DISCLAIMER_EN);
 }
 
 function ensureAdminPanel(){
@@ -461,8 +528,20 @@ function setup(){
   $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') closeScoreModal(); });
   document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && $('scoreModal').classList.contains('open')) closeScoreModal(); });
   $('refreshBtn')?.addEventListener('click', loadRisk);
-  $('makeGlobalPostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('en'));
-  $('makeJapanesePostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('ja'));
+  $('makeGlobalPostBtn')?.addEventListener('click', ()=>{
+    if(currentData?.isBaseline){
+      $('postText').value = '⚠️ BASELINE MODE — no live sources are reachable right now. Do not post; this data is illustrative placeholder text, not real reporting.';
+      return;
+    }
+    $('postText').value = generatePost('en');
+  });
+  $('makeJapanesePostBtn')?.addEventListener('click', ()=>{
+    if(currentData?.isBaseline){
+      $('postText').value = '⚠️ ベースラインモードです(実データ取得不可)。この内容は投稿しないでください — 実際の報道ではなくダミーの説明文です。';
+      return;
+    }
+    $('postText').value = generatePost('ja');
+  });
   $('copyPostBtn')?.addEventListener('click', copyGeneratedPost);
   loadRisk();
   setInterval(loadRisk, 60000);
