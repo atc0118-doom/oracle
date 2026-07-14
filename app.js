@@ -438,10 +438,28 @@ function setup(){
   const isAdmin = checkAdminAccess();
   const panel = isAdmin ? ensureAdminPanel() : $('adminPanel');
   if(isAdmin) panel?.classList.add('open');
-  $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
-  $('closeModal').addEventListener('click', ()=> $('scoreModal').classList.remove('open'));
-  $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
-  document.addEventListener('keydown', e=>{ if(e.key === 'Escape') $('scoreModal').classList.remove('open'); });
+  // FIX (accessibility): the modal's aria-hidden="true" was set once in the
+  // HTML and never updated when JS toggled the .open class, so a screen
+  // reader would always announce the dialog as hidden even while it was
+  // visually open — and closing it never returned focus anywhere, so
+  // keyboard/screen-reader users would lose their place. Now aria-hidden and
+  // focus move together with the visual open/close state.
+  const openScoreModal = () => {
+    const modal = $('scoreModal');
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    $('closeModal')?.focus();
+  };
+  const closeScoreModal = () => {
+    const modal = $('scoreModal');
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+    $('whyBtn')?.focus();
+  };
+  $('whyBtn').addEventListener('click', openScoreModal);
+  $('closeModal').addEventListener('click', closeScoreModal);
+  $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') closeScoreModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && $('scoreModal').classList.contains('open')) closeScoreModal(); });
   $('refreshBtn')?.addEventListener('click', loadRisk);
   $('makeGlobalPostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('en'));
   $('makeJapanesePostBtn')?.addEventListener('click', ()=> $('postText').value = generatePost('ja'));
