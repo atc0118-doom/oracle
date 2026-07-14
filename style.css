@@ -28,3 +28,16 @@
 
 /* v13.2 admin restoration */
 .admin.open{display:block!important}.copy-status{min-height:18px;margin-top:8px;color:var(--green);font-size:11px;letter-spacing:.16em;font-weight:800}.admin-buttons{grid-template-columns:repeat(4,1fr)}@media(max-width:720px){.admin-buttons{grid-template-columns:1fr 1fr}.admin textarea{font-size:16px}}
+
+/* FIX: DATA SOURCES pills are now rendered from real sourceConfidence data
+   (see app.js renderDataSources) instead of a static hardcoded list that
+   included services (NASA, MarineTraffic, FlightRadar24) never actually
+   fetched anywhere in api/risk.js. .source-pills uses display:contents so
+   its <b> children still lay out as direct flex items of .sources, matching
+   the original visual layout. .limited pills (sources risk.js reported as
+   degraded/unavailable) get a dimmed, yellow dot instead of the green
+   "connected" dot, so degraded status is visible instead of implied-live. */
+.source-pills{display:contents}
+.sources b.limited{opacity:.55}
+.sources b.limited i{background:var(--yellow);box-shadow:0 0 8px rgba(201,171,69,.6)}
+.metrics-note{grid-column:1/-1;margin:2px 0 0;color:var(--muted);font-size:11px;line-height:1.55;letter-spacing:.03em}
