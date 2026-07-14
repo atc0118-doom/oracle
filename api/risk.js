@@ -1023,13 +1023,25 @@ function buildPayload(analyzed, articles, llm, meta={}){
     .slice(0,5)
     .map(({article:a, index:i, cls})=>({ time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting', ...cls }));
 
-  const aiOk = Boolean(llm && !llm.error);
+  const isBaseline = Boolean(meta.isBaseline);
+
+  // FIX: previously `aiOk` only checked whether the AI call succeeded, with
+  // no check for isBaseline. Since aiAssessment() is called unconditionally
+  // (even in baseline mode, with fabricated baselineArticles() headlines as
+  // input), a successful AI call in baseline mode meant the model was
+  // treating synthetic placeholder text as real reporting and generating
+  // keyDrivers / verifiedSources / sourceConfidence / outlook24h from it —
+  // all of which bypass the isBaseline guards that only cover assessment,
+  // scoreReason, brief, xPost*, and topEvent below. Excluding isBaseline
+  // here means every `aiOk ? ... : ...` branch in this function now falls
+  // back to the rule-based/placeholder path whenever we're in baseline mode.
+  // (isBaseline is declared above this line, not below, since aiOk depends
+  // on it — declaring it after would throw a ReferenceError.)
+  const aiOk = Boolean(llm && !llm.error) && !isBaseline;
   const corpus = (articles||[]).map(a=>a.title).join(' ');
   const outlookLabel = aiOk
     ? normalizeOutlook(llm.outlook24h)
     : (score >= 55 ? 'WATCH' : 'STABLE');
-
-  const isBaseline = Boolean(meta.isBaseline);
 
   // FIX: confidence now only gets the AI bonus when the call actually succeeded,
   // and is hard-capped low whenever we're in baseline mode (no real data at all).
