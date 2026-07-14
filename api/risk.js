@@ -245,9 +245,19 @@ function sourceName(domain=''){
 // FIX: removed unused/dead `countTerms` function that was never called anywhere.
 
 function countOccurrences(text, terms){
+  // FIX: previously this used a strict `\bterm\b` boundary, which meant a
+  // keyword like 'attack' would NOT match 'attacks', and 'strike' would NOT
+  // match 'strikes' — because the word-boundary check fails when the next
+  // character (the 's') is itself a word character. Real headlines are full
+  // of plurals ("US attacks Iran", "launches strikes"), so this was silently
+  // causing clearly-military headlines to match zero category keywords and
+  // fall through to the 'General' driver fallback (visible in production as
+  // "it contributes mainly to the general driver" in the Top Event summary).
+  // Adding an optional trailing 's' before the closing boundary fixes the
+  // common case without turning this into a full stemmer.
   return terms.reduce((n,t)=>{
     const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp('\\b' + escaped.replace(/\\s+/g,'\\s+') + '\\b', 'gi');
+    const re = new RegExp('\\b' + escaped.replace(/\\s+/g,'\\s+') + 's?\\b', 'gi');
     return n + ((text.match(re) || []).length);
   }, 0);
 }
@@ -467,7 +477,7 @@ function analyzeArticles(articles){
   const confidence = clamp(Math.round(52 + Math.min(list.length,80)*0.18 + sourceDiversity*3), 45, 87);
   const top = pickTopEventFromScores(articleScores, activeRegions);
 
-  return { drivers, driverEvidence, regions:activeRegions, inactiveRegions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, adjustmentReasons, final, confidence, top, total, contributors, driverRaw, regionRaw };
+  return { drivers, driverEvidence, regions:activeRegions, inactiveRegions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, adjustmentReasons, stabilityReasons:stability.reasons, duplicateReasons:duplicate.reasons, globalSyncReasons:globalSync.reasons, final, confidence, top, total, contributors, driverRaw, regionRaw };
 }
 
 // FIX (transparency): these three adjustment functions used to return only a
@@ -495,7 +505,22 @@ function globalSynchronizationAdjustment(contributors=[], drivers={}){
   const topName = contributors[0]?.name || 'the top region';
   let adj = 0;
   const reasons = [];
-  if(topShare > 58){ adj -= 3; reasons.push(`${topName} accounts for ${topShare}% of signals (>58%): -3, risk is regionally concentrated rather than globally synchronized.`); }
+  // FIX (design): this used to subtract -3 any time one region held >58% of
+  // signals, with no regard for how severe the underlying signal was. That
+  // meant a genuinely severe single-region war (e.g. Military evidence score
+  // near 90) got the same "you're just regionally concentrated" discount as
+  // a minor, contained regional flare-up — actively suppressing the index
+  // for exactly the scenario where regional concentration IS the severity,
+  // not a mitigating factor. Now the concentration penalty is skipped when
+  // Military evidence is already severe (>=75); concentration only counts
+  // against the score when it ISN'T accompanied by a severe driver signal.
+  const severeSingleDriver = (drivers.Military||0) >= 75;
+  if(topShare > 58 && !severeSingleDriver){
+    adj -= 3;
+    reasons.push(`${topName} accounts for ${topShare}% of signals (>58%): -3, risk is regionally concentrated rather than globally synchronized.`);
+  } else if(topShare > 58 && severeSingleDriver){
+    reasons.push(`${topName} accounts for ${topShare}% of signals, but Military evidence (${Math.round(drivers.Military||0)}) is already severe (>=75): no concentration discount applied, since a severe single-region conflict shouldn't score lower than a milder multi-region one.`);
+  }
   if(topShare < 38 && (drivers.Military||0) > 50){ adj += 2; reasons.push(`No single region dominates (top region ${topShare}% <38%) while Military pressure is high (${Math.round(drivers.Military||0)}): +2, pressure appears spread across regions.`); }
   if((drivers.Cyber||0) > 45 && (drivers.Logistics||0) > 45){ adj += 2; reasons.push(`Cyber (${Math.round(drivers.Cyber||0)}) and Logistics (${Math.round(drivers.Logistics||0)}) are both elevated (>45): +2, possible cross-domain spillover.`); }
   if(!reasons.length) reasons.push('No global-synchronization conditions were met: no adjustment.');
@@ -509,7 +534,17 @@ function stabilityAdjustment(drivers, regions, total, contributors=[]){
   if(regions[0]?.score > 62){ adj += 2; reasons.push(`Top region "${regions[0]?.name}" scores ${regions[0]?.score} (>62): +2, well-evidenced regional signal.`); }
   if(total < 12){ adj -= 5; reasons.push(`Only ${total} public signals total (<12): -5, low signal volume reduces confidence.`); }
   if((drivers.Logistics||0) < 22 && (drivers.Finance||0) < 22){ adj -= 2; reasons.push(`Logistics (${Math.round(drivers.Logistics||0)}) and Finance (${Math.round(drivers.Finance||0)}) both low (<22): -2, no economic spillover detected.`); }
-  if((contributors[0]?.share || 0) > 62){ adj -= 2; reasons.push(`Top region holds ${contributors[0]?.share}% share of signals (>62%): -2, penalizing single-region concentration.`); }
+  // FIX (design): same reasoning as globalSynchronizationAdjustment above —
+  // don't penalize single-region concentration when the underlying driver
+  // signal is already severe (Military >= 75). Otherwise a severe, contained
+  // war gets double-penalized for concentration in two separate places.
+  const severeSingleDriver = (drivers.Military||0) >= 75;
+  if((contributors[0]?.share || 0) > 62 && !severeSingleDriver){
+    adj -= 2;
+    reasons.push(`Top region holds ${contributors[0]?.share}% share of signals (>62%): -2, penalizing single-region concentration.`);
+  } else if((contributors[0]?.share || 0) > 62 && severeSingleDriver){
+    reasons.push(`Top region holds ${contributors[0]?.share}% share of signals, but Military evidence (${Math.round(drivers.Military||0)}) is already severe (>=75): no concentration penalty applied here either.`);
+  }
   return { value: Math.round(adj*10)/10, reasons };
 }
 
@@ -960,6 +995,17 @@ function sourceTimeLabel(article, fallbackIndex=0){
 }
 
 function buildScoreBridge(analyzed){
+  // FIX: previously this only returned a flat `reasons` array, but app.js's
+  // renderScoreBridge() was looking for `bridge.stabilityDetails`,
+  // `bridge.duplicate.note`, and `bridge.global.reason` — none of which
+  // this ever sent. As a result the UI always fell back to 3 generic
+  // hardcoded captions ("Primary driver and containment checks", etc.)
+  // regardless of which rules actually fired. Now each adjustment's own
+  // reason list is joined into a dedicated *Note field matching what the
+  // frontend reads, so the real per-cycle explanation is what shows up.
+  const stabilityNote = (analyzed.stabilityReasons || []).join(' ');
+  const duplicateNote = (analyzed.duplicateReasons || []).join(' ');
+  const globalNote = (analyzed.globalSyncReasons || []).join(' ');
   return {
     raw: round1(analyzed.raw),
     stability: round1(analyzed.adjustment),
@@ -967,6 +1013,9 @@ function buildScoreBridge(analyzed){
     globalNormalization: round1(analyzed.globalNormalization),
     final: analyzed.final,
     reasons: analyzed.adjustmentReasons || [],
+    stabilityNote,
+    duplicateNote,
+    globalNote,
     note: 'Raw weighted drivers are adjusted for duplicate noise, regional concentration, and global synchronization.'
   };
 }
