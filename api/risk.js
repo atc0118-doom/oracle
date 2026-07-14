@@ -1040,7 +1040,21 @@ function topEventSummary(top, analyzed){
     || Object.entries(analyzed.drivers || {}).sort((a,b)=>b[1]-a[1])[0]?.[0]
     || 'risk';
 
-  return `${top.source || 'Source'} report monitored as a ${region} signal; it contributes mainly to the ${primary.toLowerCase()} driver.`;
+  // FIX: Top Event is always a single headline from a single outlet, chosen
+  // purely by score — whichever outlet happens to publish the most/freshest
+  // matching headlines that cycle tends to win repeatedly (e.g. a regional
+  // broadcaster naturally publishes more Middle East headlines than a wire
+  // service with global scope, with no explicit preference for it in this
+  // code). Since only one outlet's framing gets surfaced as "the" event,
+  // this appends how many independent sources are covering the same region
+  // this cycle, so a repeated single-outlet pick doesn't read as if that
+  // outlet were the only one reporting on it.
+  const regionData = analyzed.regions?.find(r => r.name === region);
+  const corroboration = regionData?.sources > 1
+    ? ` ${regionData.sources} other public sources are reporting on ${region} this cycle; this is one outlet's framing of it, not independent confirmation of every detail.`
+    : '';
+
+  return `${top.source || 'Source'} report monitored as a ${region} signal; it contributes mainly to the ${primary.toLowerCase()} driver.${corroboration}`;
 }
 
 function sourceTimeLabel(article, fallbackIndex=0){
