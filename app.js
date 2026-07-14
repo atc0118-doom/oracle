@@ -396,34 +396,21 @@ async function copyGeneratedPost(){
   setTimeout(()=>{ if(status) status.textContent=''; }, 1800);
 }
 
-// FIX (security): this used to be `params.get('admin') === 'doom'` — a literal
-// password sitting in this file, visible to anyone who viewed source. The
-// server-side /api/admin-auth endpoint existed in this repo already but was
-// never actually called from here, so the old hardcoded check was still the
-// real gate. This now sends whatever the `admin` URL param contains to the
-// server as a *candidate* token and only unlocks the panel if the server
-// confirms it matches ADMIN_TOKEN. The URL param is just how the person
-// submits a guess; it no longer IS the password.
-async function checkAdminAccess(){
+// NOTE (tradeoff, explicit by request): this is back to a simple client-side
+// URL parameter check with no server-side verification — anyone who knows or
+// guesses the param value can open the admin panel. /api/admin-auth.js still
+// exists and still works if called, but nothing here calls it anymore. This
+// is acceptable ONLY as long as the admin panel keeps doing low-stakes things
+// (triggering a refresh, generating draft social post text). If it ever
+// starts doing anything more sensitive, this needs to go back to a real
+// server-side check.
+function checkAdminAccess(){
   const params = new URLSearchParams(location.search);
-  const token = params.get('admin');
-  if(!token) return false;
-  try{
-    const res = await fetch('/api/admin-auth', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token })
-    });
-    if(!res.ok) return false;
-    const data = await res.json();
-    return Boolean(data?.ok);
-  }catch{
-    return false;
-  }
+  return params.get('admin') === 'doom';
 }
 
-async function setup(){
-  const isAdmin = await checkAdminAccess();
+function setup(){
+  const isAdmin = checkAdminAccess();
   const panel = isAdmin ? ensureAdminPanel() : $('adminPanel');
   if(isAdmin) panel?.classList.add('open');
   $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
