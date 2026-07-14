@@ -35,6 +35,17 @@ const CATEGORY_KEYWORDS = {
 };
 
 const WEIGHTS = { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
+// FIX: headlines about satire, art installations, comedy, or other human-
+// interest coverage can still contain risk keywords incidentally (e.g. an
+// "Iran War Participation Trophy" sculpture mocking a politician contains
+// "war", which was enough to get it counted as a Military-driver signal and
+// occupy a slot in the 24H TIMELINE next to actual strike/attack reporting).
+// This is a blocklist of terms that reliably indicate the piece is commentary/
+// human-interest rather than a report of an actual event, used to exclude
+// such articles from category/region matching entirely (see analyzeArticles).
+// It's a blunt heuristic, not real topic classification — it won't catch
+// every case — but it removes the clearest false positives.
+const SATIRE_INDICATOR_TERMS = ['mocks','mocking','satire','satirical','parody','spoof','trophy','sculpture','statue','art installation','meme','cartoon','comedian','comedy sketch','tongue-in-cheek'];
 const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null });
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6500;
@@ -306,6 +317,18 @@ function analyzeArticles(articles){
     let catTotal = 0;
     const cats = {};
 
+    // FIX: if the headline itself signals satire/human-interest coverage
+    // (see SATIRE_INDICATOR_TERMS above), don't run it through category or
+    // region matching at all. It still exists in the article list — it's not
+    // deleted or hidden from anything else — but it can't count as a
+    // Military/Diplomatic/etc. signal or a regional signal, which means the
+    // existing "only show timeline items that matched a real category or
+    // region" filter (see timelineClassification / buildPayload) now
+    // correctly excludes it instead of surfacing it as if it were a strike
+    // or attack report.
+    const isSatire = SATIRE_INDICATOR_TERMS.some(term => titleText.includes(term));
+
+    if(!isSatire){
     for(const [cat, terms] of Object.entries(CATEGORY_KEYWORDS)){
       const hits = countOccurrences(text, terms);
       if(hits){
@@ -316,9 +339,11 @@ function analyzeArticles(articles){
         catTotal += val;
       }
     }
+    }
 
     let regTotal = 0;
     const regs = {};
+    if(!isSatire){
     for(const r of REGION_KEYWORDS){
       const matchedTerms = r.terms.filter(term=>titleText.includes(term));
       const hits = countOccurrences(titleText, r.terms);
@@ -340,6 +365,7 @@ function analyzeArticles(articles){
         regs[r.name] = hits;
         regTotal += val;
       }
+    }
     }
 
     const sourceBoost = /reuters|ap news|associated press|bbc|npr|al jazeera|guardian|cnbc/i.test(a.source || '') ? 1.8 : 0;
@@ -371,6 +397,21 @@ function analyzeArticles(articles){
   const maxDriverRaw = Math.max(1, ...Object.values(driverRaw));
   const drivers = {};
   const driverEvidence = {};
+  // FIX (honesty): Finance and Cyber in particular sound like they could be
+  // backed by real data (live prices/indices, a threat-intel feed) when the
+  // mechanism is identical to every other driver: counting matches against
+  // CATEGORY_KEYWORDS in headline text. app.js already had a spot to show
+  // this (`ev.basis`) but nothing ever populated it, so it always fell back
+  // to a generic "Evidence score, not probability" line. This spells out
+  // what's actually being counted, per driver.
+  const DRIVER_BASIS = {
+    Military: 'Headline keyword matches (attack, strike, missile, etc.) — not troop-movement or satellite data',
+    Diplomatic: 'Headline keyword matches (sanction, summit, treaty, etc.)',
+    Cyber: 'Headline keyword matches (hack, ransomware, breach, etc.) — not a threat-intel feed',
+    Logistics: 'Headline keyword matches (shipping, port, tanker, etc.)',
+    Finance: 'Headline keyword matches (market, oil, stocks, etc.) — not live price or index data',
+    Disaster: 'Headline keyword matches (earthquake, flood, storm, etc.)'
+  };
   for(const cat of Object.keys(CATEGORY_KEYWORDS)){
     const sourceBoost = Math.min(driverSources[cat].size, 6) * 2.5;
     const volumeBoost = Math.log1p(total) * 1.6;
@@ -380,7 +421,8 @@ function analyzeArticles(articles){
       signals: round1(driverRaw[cat] || 0),
       sources: driverSources[cat].size,
       contribution: round1((drivers[cat] || 0) * (WEIGHTS[cat] || 0)),
-      weight: WEIGHTS[cat] || 0
+      weight: WEIGHTS[cat] || 0,
+      basis: DRIVER_BASIS[cat] || 'Headline keyword matches'
     };
   }
 
