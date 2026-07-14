@@ -72,7 +72,6 @@ function render(data){
   renderLists('keyDrivers', currentData.keyDrivers || fallback.keyDrivers);
   renderLists('watchNext', currentData.watchNext || fallback.watchNext);
   renderSourceConfidence(currentData.sourceConfidence || fallback.sourceConfidence);
-  renderVerifiedSources(currentData.verifiedSources || fallback.verifiedSources || []);
   renderEvidence(currentData);
   $('confidence').textContent = `EVIDENCE STRENGTH ${currentData.evidenceStrength || evidenceStrengthFromData(currentData)}`;
   $('confidenceBar').style.width = `${clamp(currentData.sourceHealth || currentData.confidence || 70,0,100)}%`;
@@ -122,14 +121,16 @@ function renderSourceConfidence(sc){
   el.innerHTML = `<div class="source-pillset">${available || '<b>Public Sources</b>'}${limited ? limited : ''}</div><p>${escapeHtml(sc.note || 'Source confidence is being monitored.')}</p>`;
 }
 
-function renderVerifiedSources(sources){
-  const el = $('verifiedSources');
-  if(!el) return;
-  const list = Array.isArray(sources) ? sources.slice(0,8) : [];
-  el.innerHTML = list.length
-    ? list.map(s=>`<b>✓ ${escapeHtml(s)}</b>`).join('')
-    : '<em>No verified source list available</em>';
-}
+// FIX: removed renderVerifiedSources(). Its target element (#verifiedSources)
+// was already marked `hidden` in index.html — someone clearly intended this
+// to not be shown — but `.source-pillset{display:flex}` in style.css was
+// overriding that (a class selector on display always beats the browser's
+// default `[hidden]{display:none}` UA rule unless the author CSS accounts
+// for it), so it rendered anyway as a second, near-identical checkmarked
+// source list directly below the EVIDENCE card's real one (#evidenceSourceList,
+// which already covers the same data via renderEvidence's fallback to
+// data.verifiedSources). The element and its render call are removed rather
+// than just patched, since it was fully redundant to begin with.
 
 function renderEvidence(data){
   const ev = data.evidence || {};
