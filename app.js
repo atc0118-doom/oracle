@@ -91,6 +91,7 @@ function render(data){
   renderRegions(currentData.regions || fallback.regions);
   renderTimeline(currentData.timeline || fallback.timeline);
   renderMetrics(currentData.metrics || fallback.metrics);
+  renderDataSources(currentData);
   renderCalc(currentData);
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
@@ -170,6 +171,23 @@ function evidenceStrengthFromData(data){
   return 'LIMITED';
 }
 
+function renderDataSources(data){
+  const el = $('dataSources');
+  if(!el) return;
+  // FIX: this list used to be static HTML hardcoded in index.html, including
+  // NASA, MarineTraffic, and FlightRadar24 — three services this project has
+  // never actually called anywhere in api/risk.js. Every pill also always
+  // showed a green "connected" dot regardless of any real status. Now it's
+  // rendered from the same sourceConfidence data already used elsewhere
+  // (real availableSources vs limitedSources), so it can never claim a feed
+  // is live when nothing was ever fetched from it.
+  const sc = data.sourceConfidence || fallback.sourceConfidence || {};
+  const available = Array.isArray(sc.availableSources) ? sc.availableSources : [];
+  const limited = Array.isArray(sc.limitedSources) ? sc.limitedSources : [];
+  const availHtml = available.slice(0,8).map(s=>`<b>${escapeHtml(s)} <i></i></b>`).join('');
+  const limitedHtml = limited.slice(0,5).map(s=>`<b class="limited">${escapeHtml(s)} <i></i></b>`).join('');
+  el.innerHTML = (availHtml + limitedHtml) || '<b>Public sources <i></i></b>';
+}
 function renderContributors(contributors){
   const el = $('contributors');
   if(!el) return;
@@ -177,7 +195,7 @@ function renderContributors(contributors){
   el.innerHTML = list.map((c,i)=>{
     const impact = Math.round(c.impact || 0);
     const signals = c.signals !== undefined ? `${Number(c.signals).toFixed(1)} signals` : `${Math.round(c.share || 0)}% signal share`;
-    const sources = c.sources !== undefined ? `${c.sources} sources` : 'source mix tracked';
+    const sources = c.sources !== undefined ? `${c.sources} source${c.sources === 1 ? '' : 's'}` : 'source mix tracked';
     return `
     <div class="contributor-row">
       <div class="ranknum">${String(i+1).padStart(2,'0')}</div>
@@ -197,13 +215,14 @@ function renderScoreBridge(bridge){
   const globalNormalization = Number(bridge.globalNormalization ?? 0);
   const final = Number(bridge.final ?? currentData?.score ?? 0);
   const line = (label, val, note='') => `<div class="bridge-line"><span>${label}${note ? `<small>${escapeHtml(note)}</small>` : ''}</span><strong>${val >= 0 ? '+' : ''}${Number(val).toFixed(1)}</strong></div>`;
-  const duplicate = bridge.duplicate || {};
-  const global = bridge.global || {};
-  const stabilityDetails = Array.isArray(bridge.stabilityDetails) ? bridge.stabilityDetails : [];
-  const formula = Array.isArray(bridge.formula) ? bridge.formula : [];
-  const stabilityNote = stabilityDetails.length ? stabilityDetails.map(x=>`${x.label} ${Number(x.value)>=0?'+':''}${Number(x.value).toFixed(1)}`).join(' / ') : 'Primary driver and containment checks';
-  const duplicateNote = duplicate.note || 'Duplicate handling produced no reduction for this cycle.';
-  const globalNote = global.reason || 'Cross-region normalization based on active regional contributor distribution.';
+  // FIX: this used to read bridge.stabilityDetails / bridge.duplicate.note /
+  // bridge.global.reason / bridge.formula, none of which risk.js ever sent —
+  // so every line always fell back to the same 3 generic captions regardless
+  // of what actually happened that cycle. risk.js now sends stabilityNote /
+  // duplicateNote / globalNote directly, matching what's read here.
+  const stabilityNote = bridge.stabilityNote || 'Primary driver and containment checks';
+  const duplicateNote = bridge.duplicateNote || 'Duplicate handling produced no reduction for this cycle.';
+  const globalNote = bridge.globalNote || 'Cross-region normalization based on active regional contributor distribution.';
   el.innerHTML = `
     <div class="bridge-main"><span>RAW</span><b>${raw.toFixed(1)}</b><em>→</em><span>INDEX</span><b>${Math.round(final)}</b></div>
     ${line('Stability adjustment', stability, stabilityNote)}
@@ -212,7 +231,6 @@ function renderScoreBridge(bridge){
     <div class="formula-box">
       <b>WHY ${Math.round(final)}?</b>
       <p>${escapeHtml(bridge.note || 'Raw weighted drivers are adjusted before the final index is shown.')}</p>
-      ${formula.length ? formula.map(f=>`<div class="formula-line"><span>${escapeHtml(f.label)}</span><strong>${Number(f.value)>=0 && f.label !== 'Final index' ? '+' : ''}${f.label === 'Final index' ? Math.round(f.value) : Number(f.value).toFixed(1)}</strong><small>${escapeHtml(f.note || '')}</small></div>`).join('') : ''}
     </div>
   `;
 }
@@ -250,6 +268,12 @@ function renderMetrics(m){
   $('metricCyberSub').textContent = m.cyberSub || 'LOW SURGE';
   $('metricLogistics').textContent = m.logistics || 'STABLE';
   $('metricLogisticsSub').textContent = m.logisticsSub || 'CONTAINED';
+  // FIX: risk.js has always computed metrics.note (the disclosure that these
+  // tiles restate the Military/Cyber/Logistics driver scores above, and that
+  // there's no separate flight-tracking/cyber-threat/shipping feed behind
+  // them), but nothing ever rendered it — so "MILITARY FLIGHTS: ELEVATED"
+  // still reads like a real dedicated feed with zero disclosure in sight.
+  if($('metricsNote')) $('metricsNote').textContent = m.note || '';
 }
 function renderCalc(data){
   const calc = data.calculation || {};
