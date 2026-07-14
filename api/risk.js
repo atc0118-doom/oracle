@@ -636,8 +636,8 @@ Required keys:
 - watchNext: array of 3 to 5 short items ORACLE should monitor next.
 - sourceConfidence: object with availableSources array, limitedSources array, note string.
 - verifiedSources: array of source names actually present in supplied headlines.
-- xPostGlobal: English post under 650 characters, world-facing tone, source-bound, cautious.
-- xPostJapanese: Japanese post under 650 Japanese characters, calm and concise, source-bound.
+- xPostGlobal: English post under 140 characters. This is CRITICAL: the app appends a disclaimer, a link, and hashtags after this text, and the full assembled post must fit X's 280-character free-tier limit, so this field alone has very little room. World-facing tone, source-bound, cautious, no hashtags or links (those are added separately).
+- xPostJapanese: Japanese post under 60 characters, for the same reason as above (Japanese characters take more visual width per character than the 140-character English budget implies). Calm and concise, source-bound, no hashtags or links.
 - hashtags: array of 8 to 14 relevant English hashtags.
 
 CRITICAL SAFETY / RELIABILITY RULES:
