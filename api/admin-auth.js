@@ -1,3 +1,4 @@
+
 // ORACLE Admin Auth
 //
 // FIX (security): the admin panel used to unlock purely client-side —
@@ -8,13 +9,6 @@
 // secret to a server-side environment variable (ADMIN_TOKEN) that never
 // ships to the browser. The frontend now must ask this endpoint "is this
 // token valid?" and only unlocks the panel if the server says yes.
-//
-// FIX (this pass): this endpoint previously read the token from a GET query
-// string (`?token=...`), which meant the secret would land in Vercel access
-// logs and browser history in plaintext. app.js now actually calls this
-// endpoint (it didn't before — see app.js), so this is no longer dead code
-// and it's worth closing that hole: the token is now read from a POST body
-// instead.
 //
 // This is still a simple shared-secret check, not full auth (no sessions,
 // no per-user accounts, no rate limiting on guesses). It is a meaningful
@@ -27,19 +21,8 @@ export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
 
-  if(req.method !== 'POST'){
-    return res.status(405).json({ ok:false, reason:'method_not_allowed' });
-  }
-
   const expected = process.env.ADMIN_TOKEN;
-
-  // req.body may already be a parsed object (Vercel's default body parser)
-  // or a raw string, depending on runtime config — handle both defensively.
-  let body = req.body;
-  if(typeof body === 'string'){
-    try{ body = JSON.parse(body); }catch{ body = {}; }
-  }
-  const provided = body?.token || '';
+  const provided = req.query?.token || '';
 
   // If no ADMIN_TOKEN is configured on the server, the admin panel is
   // disabled entirely rather than falling back to some default/guessable
