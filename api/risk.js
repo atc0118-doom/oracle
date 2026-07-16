@@ -35,17 +35,6 @@ const CATEGORY_KEYWORDS = {
 };
 
 const WEIGHTS = { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
-// FIX: headlines about satire, art installations, comedy, or other human-
-// interest coverage can still contain risk keywords incidentally (e.g. an
-// "Iran War Participation Trophy" sculpture mocking a politician contains
-// "war", which was enough to get it counted as a Military-driver signal and
-// occupy a slot in the 24H TIMELINE next to actual strike/attack reporting).
-// This is a blocklist of terms that reliably indicate the piece is commentary/
-// human-interest rather than a report of an actual event, used to exclude
-// such articles from category/region matching entirely (see analyzeArticles).
-// It's a blunt heuristic, not real topic classification — it won't catch
-// every case — but it removes the clearest false positives.
-const SATIRE_INDICATOR_TERMS = ['mocks','mocking','satire','satirical','parody','spoof','trophy','sculpture','statue','art installation','meme','cartoon','comedian','comedy sketch','tongue-in-cheek'];
 const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null });
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6500;
@@ -118,29 +107,13 @@ async function loadArticles(){
 }
 
 async function fetchWithTimeout(url, options={}){
-  // FIX (reliability): previously a single failed/timed-out request meant
-  // that source was down for the whole cycle, even for a one-off network
-  // blip (common on serverless cold starts hitting rate-limited public
-  // APIs). This doesn't change the honesty guarantees at all — isBaseline/
-  // degraded still kick in exactly the same way if a source is genuinely
-  // down — it just gives each source one quick retry before giving up, so
-  // fewer cycles unnecessarily fall back to cache/baseline due to a single
-  // transient hiccup.
-  const attempts = options.retries ?? 1;
-  let lastErr;
-  for(let attempt = 0; attempt <= attempts; attempt++){
-    const controller = new AbortController();
-    const timeout = setTimeout(()=>controller.abort(), options.timeout || FETCH_TIMEOUT_MS);
-    try{
-      return await fetch(url, { ...options, signal:controller.signal });
-    }catch(err){
-      lastErr = err;
-      if(attempt < attempts) await new Promise(res=>setTimeout(res, 250));
-    }finally{
-      clearTimeout(timeout);
-    }
+  const controller = new AbortController();
+  const timeout = setTimeout(()=>controller.abort(), options.timeout || FETCH_TIMEOUT_MS);
+  try{
+    return await fetch(url, { ...options, signal:controller.signal });
+  }finally{
+    clearTimeout(timeout);
   }
-  throw lastErr;
 }
 
 async function fetchGdelt(){
@@ -272,19 +245,9 @@ function sourceName(domain=''){
 // FIX: removed unused/dead `countTerms` function that was never called anywhere.
 
 function countOccurrences(text, terms){
-  // FIX: previously this used a strict `\bterm\b` boundary, which meant a
-  // keyword like 'attack' would NOT match 'attacks', and 'strike' would NOT
-  // match 'strikes' — because the word-boundary check fails when the next
-  // character (the 's') is itself a word character. Real headlines are full
-  // of plurals ("US attacks Iran", "launches strikes"), so this was silently
-  // causing clearly-military headlines to match zero category keywords and
-  // fall through to the 'General' driver fallback (visible in production as
-  // "it contributes mainly to the general driver" in the Top Event summary).
-  // Adding an optional trailing 's' before the closing boundary fixes the
-  // common case without turning this into a full stemmer.
   return terms.reduce((n,t)=>{
     const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp('\\b' + escaped.replace(/\\s+/g,'\\s+') + 's?\\b', 'gi');
+    const re = new RegExp('\\b' + escaped.replace(/\\s+/g,'\\s+') + '\\b', 'gi');
     return n + ((text.match(re) || []).length);
   }, 0);
 }
@@ -333,18 +296,6 @@ function analyzeArticles(articles){
     let catTotal = 0;
     const cats = {};
 
-    // FIX: if the headline itself signals satire/human-interest coverage
-    // (see SATIRE_INDICATOR_TERMS above), don't run it through category or
-    // region matching at all. It still exists in the article list — it's not
-    // deleted or hidden from anything else — but it can't count as a
-    // Military/Diplomatic/etc. signal or a regional signal, which means the
-    // existing "only show timeline items that matched a real category or
-    // region" filter (see timelineClassification / buildPayload) now
-    // correctly excludes it instead of surfacing it as if it were a strike
-    // or attack report.
-    const isSatire = SATIRE_INDICATOR_TERMS.some(term => titleText.includes(term));
-
-    if(!isSatire){
     for(const [cat, terms] of Object.entries(CATEGORY_KEYWORDS)){
       const hits = countOccurrences(text, terms);
       if(hits){
@@ -355,11 +306,9 @@ function analyzeArticles(articles){
         catTotal += val;
       }
     }
-    }
 
     let regTotal = 0;
     const regs = {};
-    if(!isSatire){
     for(const r of REGION_KEYWORDS){
       const matchedTerms = r.terms.filter(term=>titleText.includes(term));
       const hits = countOccurrences(titleText, r.terms);
@@ -381,7 +330,6 @@ function analyzeArticles(articles){
         regs[r.name] = hits;
         regTotal += val;
       }
-    }
     }
 
     const sourceBoost = /reuters|ap news|associated press|bbc|npr|al jazeera|guardian|cnbc/i.test(a.source || '') ? 1.8 : 0;
@@ -413,21 +361,6 @@ function analyzeArticles(articles){
   const maxDriverRaw = Math.max(1, ...Object.values(driverRaw));
   const drivers = {};
   const driverEvidence = {};
-  // FIX (honesty): Finance and Cyber in particular sound like they could be
-  // backed by real data (live prices/indices, a threat-intel feed) when the
-  // mechanism is identical to every other driver: counting matches against
-  // CATEGORY_KEYWORDS in headline text. app.js already had a spot to show
-  // this (`ev.basis`) but nothing ever populated it, so it always fell back
-  // to a generic "Evidence score, not probability" line. This spells out
-  // what's actually being counted, per driver.
-  const DRIVER_BASIS = {
-    Military: 'Headline keyword matches (attack, strike, missile, etc.) — not troop-movement or satellite data',
-    Diplomatic: 'Headline keyword matches (sanction, summit, treaty, etc.)',
-    Cyber: 'Headline keyword matches (hack, ransomware, breach, etc.) — not a threat-intel feed',
-    Logistics: 'Headline keyword matches (shipping, port, tanker, etc.)',
-    Finance: 'Headline keyword matches (market, oil, stocks, etc.) — not live price or index data',
-    Disaster: 'Headline keyword matches (earthquake, flood, storm, etc.)'
-  };
   for(const cat of Object.keys(CATEGORY_KEYWORDS)){
     const sourceBoost = Math.min(driverSources[cat].size, 6) * 2.5;
     const volumeBoost = Math.log1p(total) * 1.6;
@@ -437,8 +370,7 @@ function analyzeArticles(articles){
       signals: round1(driverRaw[cat] || 0),
       sources: driverSources[cat].size,
       contribution: round1((drivers[cat] || 0) * (WEIGHTS[cat] || 0)),
-      weight: WEIGHTS[cat] || 0,
-      basis: DRIVER_BASIS[cat] || 'Headline keyword matches'
+      weight: WEIGHTS[cat] || 0
     };
   }
 
@@ -535,7 +467,7 @@ function analyzeArticles(articles){
   const confidence = clamp(Math.round(52 + Math.min(list.length,80)*0.18 + sourceDiversity*3), 45, 87);
   const top = pickTopEventFromScores(articleScores, activeRegions);
 
-  return { drivers, driverEvidence, regions:activeRegions, inactiveRegions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, adjustmentReasons, stabilityReasons:stability.reasons, duplicateReasons:duplicate.reasons, globalSyncReasons:globalSync.reasons, final, confidence, top, total, contributors, driverRaw, regionRaw };
+  return { drivers, driverEvidence, regions:activeRegions, inactiveRegions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, adjustmentReasons, final, confidence, top, total, contributors, driverRaw, regionRaw };
 }
 
 // FIX (transparency): these three adjustment functions used to return only a
@@ -563,22 +495,7 @@ function globalSynchronizationAdjustment(contributors=[], drivers={}){
   const topName = contributors[0]?.name || 'the top region';
   let adj = 0;
   const reasons = [];
-  // FIX (design): this used to subtract -3 any time one region held >58% of
-  // signals, with no regard for how severe the underlying signal was. That
-  // meant a genuinely severe single-region war (e.g. Military evidence score
-  // near 90) got the same "you're just regionally concentrated" discount as
-  // a minor, contained regional flare-up — actively suppressing the index
-  // for exactly the scenario where regional concentration IS the severity,
-  // not a mitigating factor. Now the concentration penalty is skipped when
-  // Military evidence is already severe (>=75); concentration only counts
-  // against the score when it ISN'T accompanied by a severe driver signal.
-  const severeSingleDriver = (drivers.Military||0) >= 75;
-  if(topShare > 58 && !severeSingleDriver){
-    adj -= 3;
-    reasons.push(`${topName} accounts for ${topShare}% of signals (>58%): -3, risk is regionally concentrated rather than globally synchronized.`);
-  } else if(topShare > 58 && severeSingleDriver){
-    reasons.push(`${topName} accounts for ${topShare}% of signals, but Military evidence (${Math.round(drivers.Military||0)}) is already severe (>=75): no concentration discount applied, since a severe single-region conflict shouldn't score lower than a milder multi-region one.`);
-  }
+  if(topShare > 58){ adj -= 3; reasons.push(`${topName} accounts for ${topShare}% of signals (>58%): -3, risk is regionally concentrated rather than globally synchronized.`); }
   if(topShare < 38 && (drivers.Military||0) > 50){ adj += 2; reasons.push(`No single region dominates (top region ${topShare}% <38%) while Military pressure is high (${Math.round(drivers.Military||0)}): +2, pressure appears spread across regions.`); }
   if((drivers.Cyber||0) > 45 && (drivers.Logistics||0) > 45){ adj += 2; reasons.push(`Cyber (${Math.round(drivers.Cyber||0)}) and Logistics (${Math.round(drivers.Logistics||0)}) are both elevated (>45): +2, possible cross-domain spillover.`); }
   if(!reasons.length) reasons.push('No global-synchronization conditions were met: no adjustment.');
@@ -592,17 +509,7 @@ function stabilityAdjustment(drivers, regions, total, contributors=[]){
   if(regions[0]?.score > 62){ adj += 2; reasons.push(`Top region "${regions[0]?.name}" scores ${regions[0]?.score} (>62): +2, well-evidenced regional signal.`); }
   if(total < 12){ adj -= 5; reasons.push(`Only ${total} public signals total (<12): -5, low signal volume reduces confidence.`); }
   if((drivers.Logistics||0) < 22 && (drivers.Finance||0) < 22){ adj -= 2; reasons.push(`Logistics (${Math.round(drivers.Logistics||0)}) and Finance (${Math.round(drivers.Finance||0)}) both low (<22): -2, no economic spillover detected.`); }
-  // FIX (design): same reasoning as globalSynchronizationAdjustment above —
-  // don't penalize single-region concentration when the underlying driver
-  // signal is already severe (Military >= 75). Otherwise a severe, contained
-  // war gets double-penalized for concentration in two separate places.
-  const severeSingleDriver = (drivers.Military||0) >= 75;
-  if((contributors[0]?.share || 0) > 62 && !severeSingleDriver){
-    adj -= 2;
-    reasons.push(`Top region holds ${contributors[0]?.share}% share of signals (>62%): -2, penalizing single-region concentration.`);
-  } else if((contributors[0]?.share || 0) > 62 && severeSingleDriver){
-    reasons.push(`Top region holds ${contributors[0]?.share}% share of signals, but Military evidence (${Math.round(drivers.Military||0)}) is already severe (>=75): no concentration penalty applied here either.`);
-  }
+  if((contributors[0]?.share || 0) > 62){ adj -= 2; reasons.push(`Top region holds ${contributors[0]?.share}% share of signals (>62%): -2, penalizing single-region concentration.`); }
   return { value: Math.round(adj*10)/10, reasons };
 }
 
@@ -636,8 +543,8 @@ Required keys:
 - watchNext: array of 3 to 5 short items ORACLE should monitor next.
 - sourceConfidence: object with availableSources array, limitedSources array, note string.
 - verifiedSources: array of source names actually present in supplied headlines.
-- xPostGlobal: English post under 140 characters. This is CRITICAL: the app appends a disclaimer, a link, and hashtags after this text, and the full assembled post must fit X's 280-character free-tier limit, so this field alone has very little room. World-facing tone, source-bound, cautious, no hashtags or links (those are added separately).
-- xPostJapanese: Japanese post under 60 characters, for the same reason as above (Japanese characters take more visual width per character than the 140-character English budget implies). Calm and concise, source-bound, no hashtags or links.
+- xPostGlobal: English post under 650 characters, world-facing tone, source-bound, cautious.
+- xPostJapanese: Japanese post under 650 Japanese characters, calm and concise, source-bound.
 - hashtags: array of 8 to 14 relevant English hashtags.
 
 CRITICAL SAFETY / RELIABILITY RULES:
@@ -1040,21 +947,7 @@ function topEventSummary(top, analyzed){
     || Object.entries(analyzed.drivers || {}).sort((a,b)=>b[1]-a[1])[0]?.[0]
     || 'risk';
 
-  // FIX: Top Event is always a single headline from a single outlet, chosen
-  // purely by score — whichever outlet happens to publish the most/freshest
-  // matching headlines that cycle tends to win repeatedly (e.g. a regional
-  // broadcaster naturally publishes more Middle East headlines than a wire
-  // service with global scope, with no explicit preference for it in this
-  // code). Since only one outlet's framing gets surfaced as "the" event,
-  // this appends how many independent sources are covering the same region
-  // this cycle, so a repeated single-outlet pick doesn't read as if that
-  // outlet were the only one reporting on it.
-  const regionData = analyzed.regions?.find(r => r.name === region);
-  const corroboration = regionData?.sources > 1
-    ? ` ${regionData.sources} other public sources are reporting on ${region} this cycle; this is one outlet's framing of it, not independent confirmation of every detail.`
-    : '';
-
-  return `${top.source || 'Source'} report monitored as a ${region} signal; it contributes mainly to the ${primary.toLowerCase()} driver.${corroboration}`;
+  return `${top.source || 'Source'} report monitored as a ${region} signal; it contributes mainly to the ${primary.toLowerCase()} driver.`;
 }
 
 function sourceTimeLabel(article, fallbackIndex=0){
@@ -1067,17 +960,6 @@ function sourceTimeLabel(article, fallbackIndex=0){
 }
 
 function buildScoreBridge(analyzed){
-  // FIX: previously this only returned a flat `reasons` array, but app.js's
-  // renderScoreBridge() was looking for `bridge.stabilityDetails`,
-  // `bridge.duplicate.note`, and `bridge.global.reason` — none of which
-  // this ever sent. As a result the UI always fell back to 3 generic
-  // hardcoded captions ("Primary driver and containment checks", etc.)
-  // regardless of which rules actually fired. Now each adjustment's own
-  // reason list is joined into a dedicated *Note field matching what the
-  // frontend reads, so the real per-cycle explanation is what shows up.
-  const stabilityNote = (analyzed.stabilityReasons || []).join(' ');
-  const duplicateNote = (analyzed.duplicateReasons || []).join(' ');
-  const globalNote = (analyzed.globalSyncReasons || []).join(' ');
   return {
     raw: round1(analyzed.raw),
     stability: round1(analyzed.adjustment),
@@ -1085,9 +967,6 @@ function buildScoreBridge(analyzed){
     globalNormalization: round1(analyzed.globalNormalization),
     final: analyzed.final,
     reasons: analyzed.adjustmentReasons || [],
-    stabilityNote,
-    duplicateNote,
-    globalNote,
     note: 'Raw weighted drivers are adjusted for duplicate noise, regional concentration, and global synchronization.'
   };
 }
@@ -1144,25 +1023,13 @@ function buildPayload(analyzed, articles, llm, meta={}){
     .slice(0,5)
     .map(({article:a, index:i, cls})=>({ time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting', ...cls }));
 
-  const isBaseline = Boolean(meta.isBaseline);
-
-  // FIX: previously `aiOk` only checked whether the AI call succeeded, with
-  // no check for isBaseline. Since aiAssessment() is called unconditionally
-  // (even in baseline mode, with fabricated baselineArticles() headlines as
-  // input), a successful AI call in baseline mode meant the model was
-  // treating synthetic placeholder text as real reporting and generating
-  // keyDrivers / verifiedSources / sourceConfidence / outlook24h from it —
-  // all of which bypass the isBaseline guards that only cover assessment,
-  // scoreReason, brief, xPost*, and topEvent below. Excluding isBaseline
-  // here means every `aiOk ? ... : ...` branch in this function now falls
-  // back to the rule-based/placeholder path whenever we're in baseline mode.
-  // (isBaseline is declared above this line, not below, since aiOk depends
-  // on it — declaring it after would throw a ReferenceError.)
-  const aiOk = Boolean(llm && !llm.error) && !isBaseline;
+  const aiOk = Boolean(llm && !llm.error);
   const corpus = (articles||[]).map(a=>a.title).join(' ');
   const outlookLabel = aiOk
     ? normalizeOutlook(llm.outlook24h)
     : (score >= 55 ? 'WATCH' : 'STABLE');
+
+  const isBaseline = Boolean(meta.isBaseline);
 
   // FIX: confidence now only gets the AI bonus when the call actually succeeded,
   // and is hard-capped low whenever we're in baseline mode (no real data at all).
@@ -1189,6 +1056,15 @@ function buildPayload(analyzed, articles, llm, meta={}){
     sourceError: meta.sourceError || null,
     updatedAt:new Date().toISOString(),
     score,
+    // FIX (honesty): this field used to drive the "+2 / 24H" figure on screen,
+    // but it was never a real 24h-ago reading — just `score - 2` whenever the
+    // top region had more than 2 articles, else `score - 0`. That produced an
+    // almost-always-+2 display that looked like a real trend but wasn't. The
+    // frontend no longer uses this field for the visible delta; it now keeps
+    // its own timestamped score log (localStorage) and only shows a 24H delta
+    // once a real ~24h-old reading exists, saying so plainly otherwise. This
+    // field is kept only for backward compatibility / other potential
+    // consumers and should not be re-wired into the hero delta.
     previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
     state,
     confidence,
@@ -1285,21 +1161,3 @@ function fallbackPayload(error){
     timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED', note:'Fallback mode: no scoring ran, so these tiles are fixed placeholders, not even keyword-derived values.' }
   };
 }
-
-// FIX: named exports added purely so pure/testable logic can be unit-tested
-// (see /tests/risk.test.mjs) without touching the default export Vercel
-// actually invokes as the request handler — this changes no runtime
-// behavior of the API route itself.
-export {
-  countOccurrences,
-  clamp,
-  round1,
-  stateFromScore,
-  dedupeArticles,
-  stabilityAdjustment,
-  globalSynchronizationAdjustment,
-  duplicateNoiseReduction,
-  normalizeOutlook,
-  getVerifiedSources,
-  SATIRE_INDICATOR_TERMS
-};
