@@ -249,6 +249,138 @@ function getRealDelta24h(log, currentScore){
   return { available:true, delta: Math.round(currentScore - closest.score), refScore: closest.score, refTs: closest.ts };
 }
 
+// ---------------------------------------------------------------------------
+// Share card: renders a square PNG (score, state, mini sparkline, top region,
+// timestamp) so a post on X has an image instead of bare text — image posts
+// get meaningfully more reach on X than text-only ones. Built entirely
+// client-side on a hidden <canvas>; no server round-trip needed.
+// ---------------------------------------------------------------------------
+const STATE_COLORS = { STABLE:'#47b881', WATCH:'#c9ab45', HIGH:'#e08a3c', CRITICAL:'#e5484d' };
+
+function drawShareCard(){
+  const canvas = $('shareCanvas');
+  if(!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const score = clamp(currentData?.score ?? 0, 0, 100);
+  const state = currentData?.state || stateFromScore(score);
+  const stateColor = STATE_COLORS[state] || '#c9ab45';
+  const topRegion = (currentData?.regions && currentData.regions[0]?.name) || 'Global';
+  const history = loadHistory().slice(-14);
+
+  // Background
+  const bg = ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0b0e12'); bg.addColorStop(1,'#05070a');
+  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = 'rgba(255,255,255,.03)';
+  ctx.beginPath(); ctx.arc(W/2, H*0.34, 380, 0, Math.PI*2); ctx.fill();
+
+  // Brand
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#f3f5f7';
+  ctx.font = '700 40px Arial';
+  ctx.fillText('O R A C L E', 60, 100);
+  ctx.fillStyle = '#828b96';
+  ctx.font = '600 20px Arial';
+  ctx.fillText('WORLD RISK INTELLIGENCE', 62, 130);
+
+  // Live pill
+  ctx.fillStyle = 'rgba(255,255,255,.06)';
+  roundRect(ctx, W-190, 62, 130, 42, 21); ctx.fill();
+  ctx.fillStyle = '#47b881';
+  ctx.beginPath(); ctx.arc(W-160, 83, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#cfd5db'; ctx.font = '600 16px Arial'; ctx.textAlign='left';
+  ctx.fillText('LIVE', W-140, 89);
+
+  // ORACLE INDEX label
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#828b96'; ctx.font = '600 26px Arial';
+  ctx.fillText('O R A C L E   I N D E X', W/2, 240);
+
+  // Big score
+  ctx.fillStyle = '#f4f6f8';
+  ctx.font = '800 320px Arial';
+  ctx.fillText(String(score), W/2, 560);
+
+  // State
+  ctx.fillStyle = stateColor;
+  ctx.font = '700 56px Arial';
+  ctx.fillText(state, W/2, 650);
+
+  // Top region line
+  ctx.fillStyle = '#c8cdd3'; ctx.font = '400 30px Arial';
+  ctx.fillText(`Led by ${topRegion}`, W/2, 710);
+
+  // Sparkline (last up to 14 days)
+  if(history.length >= 2){
+    const padX = 140, top = 760, chartH = 130, chartW = W - padX*2;
+    const scores = history.map(p=>p.score);
+    const min = Math.min(...scores), max = Math.max(...scores);
+    const range = Math.max(1, max-min);
+    ctx.beginPath();
+    history.forEach((p,i)=>{
+      const x = padX + (i/(history.length-1))*chartW;
+      const y = top + chartH - ((p.score-min)/range)*chartH;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.strokeStyle = stateColor; ctx.lineWidth = 5; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.stroke();
+    const lastX = padX + chartW, lastY = top + chartH - ((history[history.length-1].score-min)/range)*chartH;
+    ctx.beginPath(); ctx.arc(lastX,lastY,8,0,Math.PI*2); ctx.fillStyle = stateColor; ctx.fill();
+    ctx.fillStyle = '#828b96'; ctx.font='400 20px Arial'; ctx.textAlign='left';
+    ctx.fillText(`${history[0].date}`, padX, top+chartH+34);
+    ctx.textAlign='right';
+    ctx.fillText('TODAY', padX+chartW, top+chartH+34);
+  }
+
+  // Footer
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#6b7480'; ctx.font = '400 22px Arial';
+  ctx.fillText(`Updated ${fmtTime(currentData?.updatedAt)} · ${window.location.hostname}`, W/2, H-90);
+  ctx.fillStyle = '#565f6a'; ctx.font = '400 18px Arial';
+  ctx.fillText('Experimental project — keyword-based heuristics, not a validated risk model.', W/2, H-56);
+
+  return canvas;
+}
+
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+async function handleShareCard(){
+  const btn = $('shareCardBtn');
+  if(btn) { btn.disabled = true; btn.textContent = 'GENERATING…'; }
+  try{
+    const canvas = drawShareCard();
+    if(!canvas) return;
+    canvas.toBlob(async (blob)=>{
+      if(!blob){ if(btn){ btn.disabled=false; btn.textContent='📷 SHARE CARD FOR X'; } return; }
+      const file = new File([blob], `oracle-index-${todayStamp()}.png`, { type:'image/png' });
+      const shareText = `ORACLE Index: ${clamp(currentData?.score ?? 0,0,100)} (${currentData?.state || stateFromScore(currentData?.score ?? 0)})`;
+      try{
+        if(navigator.canShare && navigator.canShare({ files:[file] })){
+          await navigator.share({ files:[file], text: shareText, title:'ORACLE Index' });
+        }else{
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = file.name;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(()=>URL.revokeObjectURL(url), 4000);
+        }
+      }catch(_){ /* user cancelled share sheet — not an error */ }
+      if(btn){ btn.disabled=false; btn.textContent='📷 SHARE CARD FOR X'; }
+    }, 'image/png');
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='📷 SHARE CARD FOR X'; }
+  }
+}
+
 function render(data){
   currentData = data || fallback;
   const score = clamp(currentData.score, 0, 100);
@@ -682,6 +814,7 @@ function setup(){
   // non-commercial project as long as the URL itself isn't shared publicly.
   if(params.get('admin')) $('adminPanel')?.classList.add('open');
   $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
+  $('shareCardBtn')?.addEventListener('click', handleShareCard);
   $('closeModal').addEventListener('click', ()=> $('scoreModal').classList.remove('open'));
   $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
   document.addEventListener('keydown', e=>{ if(e.key === 'Escape') $('scoreModal').classList.remove('open'); });

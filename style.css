@@ -33,3 +33,8 @@
 .followup-hit{color:#c9ab45;background:rgba(201,171,69,.12);border:1px solid rgba(201,171,69,.35)}
 .followup-miss{color:#7d8792;background:rgba(125,135,146,.12);border:1px solid rgba(125,135,146,.3)}
 .followup-date{color:var(--muted);font-size:10px;letter-spacing:.08em;list-style:none}
+
+/* ORACLE X share-card button */
+.share-card-btn{display:block;margin:22px auto 0;padding:12px 22px;border-radius:999px;border:1px solid rgba(201,171,69,.4);background:rgba(201,171,69,.08);color:var(--yellow);font-size:12px;letter-spacing:.14em;font-weight:700;cursor:pointer}
+.share-card-btn:active{background:rgba(201,171,69,.16)}
+.share-card-btn[disabled]{opacity:.5;cursor:wait}
