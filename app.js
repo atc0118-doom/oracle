@@ -359,22 +359,23 @@ async function handleShareCard(){
   try{
     const canvas = drawShareCard();
     if(!canvas) return;
-    canvas.toBlob(async (blob)=>{
+    canvas.toBlob((blob)=>{
       if(!blob){ if(btn){ btn.disabled=false; btn.textContent='📷 SHARE CARD FOR X'; } return; }
+      // FIX: navigator.share({files:[...]}) was used here before, but on
+      // several Android/X-in-app-browser combinations it reports
+      // navigator.canShare({files}) === true yet the actual share sheet only
+      // passes the `text` through to X and silently drops the image —
+      // producing exactly the "posted, but no picture" result. Rather than
+      // depend on that inconsistent behavior, we always force a direct PNG
+      // download here; the user attaches it manually in the X compose
+      // screen, which works the same way on every device.
       const file = new File([blob], `oracle-index-${todayStamp()}.png`, { type:'image/png' });
-      const shareText = `ORACLE Index: ${clamp(currentData?.score ?? 0,0,100)} (${currentData?.state || stateFromScore(currentData?.score ?? 0)})`;
-      try{
-        if(navigator.canShare && navigator.canShare({ files:[file] })){
-          await navigator.share({ files:[file], text: shareText, title:'ORACLE Index' });
-        }else{
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url; a.download = file.name;
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(()=>URL.revokeObjectURL(url), 4000);
-        }
-      }catch(_){ /* user cancelled share sheet — not an error */ }
-      if(btn){ btn.disabled=false; btn.textContent='📷 SHARE CARD FOR X'; }
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url; a.download = file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      if(btn){ btn.disabled=false; btn.textContent='✅ SAVED — ATTACH IN X'; setTimeout(()=>{ btn.textContent='📷 SHARE CARD FOR X'; }, 2500); }
     }, 'image/png');
   }catch(e){
     if(btn){ btn.disabled=false; btn.textContent='📷 SHARE CARD FOR X'; }
