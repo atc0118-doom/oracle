@@ -119,26 +119,32 @@ function recordVisitAndDiff(data){
   const streakLabel = $('streakLabel');
   if(streakLabel) streakLabel.textContent = `${streakCount} DAY${streakCount === 1 ? '' : 'S'} STREAK`;
 
+  // FIX (persistence): use the server's previous-day snapshot (Redis-backed,
+  // same on every device) for the diff text and follow-up list when the
+  // backend has one; only fall back to this browser's own localStorage entry
+  // if server-side storage isn't configured yet.
+  const referenceEntry = data.serverPreviousDay || previousEntry;
+
   const diffEl = $('dailyDiffText');
   if(diffEl){
-    if(!previousEntry){
+    if(!referenceEntry){
       diffEl.textContent = `First visit logged today. Come back tomorrow to see how the index moved.`;
     }else{
-      const delta = score - previousEntry.score;
+      const delta = score - referenceEntry.score;
       const dir = delta > 0 ? 'up' : delta < 0 ? 'down' : 'unchanged';
       const deltaText = delta === 0 ? 'unchanged' : `${dir} ${Math.abs(delta)} pts`;
-      const regionNote = previousEntry.topRegion && previousEntry.topRegion !== topRegion
-        ? ` Top region shifted from ${previousEntry.topRegion} to ${topRegion}.`
+      const regionNote = referenceEntry.topRegion && referenceEntry.topRegion !== topRegion
+        ? ` Top region shifted from ${referenceEntry.topRegion} to ${topRegion}.`
         : '';
-      const stateNote = previousEntry.state && previousEntry.state !== state
-        ? ` Status moved from ${previousEntry.state} to ${state}.`
+      const stateNote = referenceEntry.state && referenceEntry.state !== state
+        ? ` Status moved from ${referenceEntry.state} to ${state}.`
         : '';
-      diffEl.textContent = `Since your last visit (${previousEntry.date}): index ${deltaText} (${previousEntry.score} → ${score}).${stateNote}${regionNote}`;
+      diffEl.textContent = `Since your last visit (${referenceEntry.date}): index ${deltaText} (${referenceEntry.score} → ${score}).${stateNote}${regionNote}`;
     }
   }
 
   renderSparkline(history);
-  renderWatchFollowup(previousEntry, data);
+  renderWatchFollowup(referenceEntry, data);
 }
 
 // Very deliberately simple: this is a keyword-overlap check, not a real
@@ -390,13 +396,22 @@ function render(data){
   $('state').textContent = state;
 
   const scoreLog = recordScoreLog(score);
-  const real24h = getRealDelta24h(scoreLog, score);
-  if(real24h.available){
-    const diff = real24h.delta;
-    $('delta').textContent = `${diff >= 0 ? '▲ +' : '▼ '}${Math.abs(diff)} / 24H`;
+  // FIX (persistence): prefer the server-side delta (Redis-backed, works
+  // across devices/browsers) when the backend has one; only fall back to the
+  // client-only localStorage version if no storage is configured server-side
+  // or it doesn't have a ~24h-old point yet either.
+  let deltaText = null;
+  if(currentData.serverDelta24h?.available){
+    const diff = Math.round(score - currentData.serverDelta24h.refScore);
+    deltaText = `${diff >= 0 ? '▲ +' : '▼ '}${Math.abs(diff)} / 24H`;
   }else{
-    $('delta').textContent = 'COLLECTING 24H HISTORY —';
+    const real24h = getRealDelta24h(scoreLog, score);
+    if(real24h.available){
+      const diff = real24h.delta;
+      deltaText = `${diff >= 0 ? '▲ +' : '▼ '}${Math.abs(diff)} / 24H`;
+    }
   }
+  $('delta').textContent = deltaText || 'COLLECTING 24H HISTORY —';
 
   $('updated').textContent = `UPDATED — ${fmtTime(currentData.updatedAt)}`;
   $('lastSync').textContent = fmtTime(currentData.updatedAt);
