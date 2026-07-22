@@ -838,7 +838,14 @@ function topicSummary(articles=[]){
   const regions = [];
   if(/iran|israel|gaza|hamas|hezbollah|houthi|red sea|lebanon|syria/.test(corpus)) regions.push('Middle East');
   if(/ukraine|russia|kyiv|donetsk|kharkiv|zaporizhzhia/.test(corpus)) regions.push('Eastern Europe');
-  if(/taiwan|china|south china sea|philippines|maritime/.test(corpus)) regions.push('East Asia');
+  // FIX: removed the bare word 'maritime' from this East Asia match for the
+  // same reason it was already removed from REGION_KEYWORDS' South China Sea
+  // terms — 'maritime' is a generic word that also appears in Middle
+  // East/Hormuz shipping stories, so keeping it here (while REGION_KEYWORDS
+  // no longer uses it) meant this hero-text summary could still label a
+  // Hormuz-only story as "East Asia" even though the actual region scoring
+  // wouldn't. Now both use the same Taiwan/China/South China Sea-specific terms.
+  if(/taiwan|china|south china sea|philippines|spratly|scarborough/.test(corpus)) regions.push('East Asia');
   if(/cyber|hack|malware|ransomware|breach|ddos/.test(corpus)) regions.push('cyber activity');
   if(/earthquake|volcano|storm|hurricane|typhoon|tsunami|wildfire|flood/.test(corpus)) regions.push('natural hazard monitoring');
   return regions.length ? regions.slice(0,3).join(', ') : 'monitored regions';
@@ -920,8 +927,18 @@ function evidenceStrengthLabel(evidence, isBaseline){
   if(isBaseline) return 'NONE'; // FIX: baseline data has no real evidence strength
   const r = evidence?.reliability || 0;
   const sc = evidence?.sourceCount || 0;
-  if(r >= 85 && sc >= 5) return 'HIGH';
-  if(r >= 70 && sc >= 3) return 'MODERATE';
+  // FIX (honesty): thresholds were r>=70 && sc>=3 for MODERATE, r>=85 && sc>=5
+  // for HIGH. In practice a routine day (e.g. 77% reliability, 10 sources)
+  // already cleared MODERATE, which reads as "reasonably solid evidence" —
+  // but the underlying method is keyword-matching heuristics with no
+  // fact-checking, source-corroboration, or claim verification at all. That
+  // gap between what the label implies and what was actually checked is the
+  // problem, not the reliability number itself. Raising the bar (and
+  // requiring more independent sources) makes MODERATE/HIGH rarer and closer
+  // to what they should mean: "a lot of independent public reporting lines up",
+  // not "the AI is confident this is true".
+  if(r >= 92 && sc >= 7) return 'HIGH';
+  if(r >= 80 && sc >= 6) return 'MODERATE';
   return 'LIMITED';
 }
 
