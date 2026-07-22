@@ -39,6 +39,85 @@ const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6500;
 
+// ---------------------------------------------------------------------------
+// FIX (persistence, priority #4 from the review backlog): the "24H delta"
+// and "yesterday's watch-next follow-up" features were entirely client-side
+// (browser localStorage), so switching devices or clearing site data reset
+// them to zero. This adds an OPTIONAL durable log backed by Upstash Redis
+// (via Vercel Marketplace's Redis integration, which injects REST
+// credentials as env vars). If no credentials are configured, every function
+// here quietly no-ops and the payload simply omits the server-side fields —
+// the frontend already has a client-side fallback for both features, so
+// nothing breaks for people who haven't set up storage yet.
+// ---------------------------------------------------------------------------
+const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || null;
+const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || null;
+const REDIS_LOG_KEY = 'oracle:score_log';
+const REDIS_LOG_MAX_AGE_MS = 9 * 24 * 60 * 60 * 1000; // keep 9 days of points server-side
+
+async function redisCommand(command){
+  if(!REDIS_URL || !REDIS_TOKEN) return null;
+  try{
+    const r = await fetchWithTimeout(REDIS_URL, {
+      method:'POST',
+      headers:{ authorization:`Bearer ${REDIS_TOKEN}`, 'content-type':'application/json' },
+      body: JSON.stringify(command),
+      timeout: 4000
+    });
+    if(!r.ok) return null;
+    const j = await r.json();
+    return j?.result ?? null;
+  }catch(_){
+    return null; // storage being unreachable should never break the risk endpoint
+  }
+}
+
+async function logScoreToRedis({ score, state, topRegion, watchNext }){
+  if(!REDIS_URL || !REDIS_TOKEN) return;
+  const now = Date.now();
+  const member = JSON.stringify({ ts:now, score, state, topRegion, watchNext: (watchNext||[]).slice(0,5) });
+  await redisCommand(['ZADD', REDIS_LOG_KEY, now, member]);
+  // Trim old points opportunistically so the sorted set doesn't grow forever.
+  await redisCommand(['ZREMRANGEBYSCORE', REDIS_LOG_KEY, 0, now - REDIS_LOG_MAX_AGE_MS]);
+}
+
+function parseRedisLogEntries(raw){
+  if(!Array.isArray(raw)) return [];
+  return raw.map(s=>{ try{ return JSON.parse(s); }catch(_){ return null; } }).filter(Boolean);
+}
+
+async function getServerDelta24h(){
+  if(!REDIS_URL || !REDIS_TOKEN) return { available:false };
+  const now = Date.now();
+  const windowMin = now - 30*60*60*1000;
+  const windowMax = now - 20*60*60*1000;
+  const raw = await redisCommand(['ZRANGEBYSCORE', REDIS_LOG_KEY, windowMin, windowMax]);
+  const entries = parseRedisLogEntries(raw);
+  if(!entries.length) return { available:false };
+  const target = now - 24*60*60*1000;
+  const closest = entries.reduce((best,e)=> Math.abs(e.ts-target) < Math.abs(best.ts-target) ? e : best);
+  return { available:true, refScore: closest.score, refTs: closest.ts };
+}
+
+async function getServerPreviousDay(){
+  if(!REDIS_URL || !REDIS_TOKEN) return null;
+  const now = Date.now();
+  const raw = await redisCommand(['ZRANGEBYSCORE', REDIS_LOG_KEY, now - REDIS_LOG_MAX_AGE_MS, now]);
+  const entries = parseRedisLogEntries(raw);
+  if(!entries.length) return null;
+  const todayJst = jstDateStamp(now);
+  // Most recent entry that falls on an earlier JST calendar day than today.
+  const priorDayEntries = entries.filter(e => jstDateStamp(e.ts) !== todayJst);
+  if(!priorDayEntries.length) return null;
+  const latest = priorDayEntries.reduce((best,e)=> e.ts > best.ts ? e : best);
+  return { date: jstDateStamp(latest.ts), score: latest.score, state: latest.state, topRegion: latest.topRegion, watchNext: latest.watchNext || [] };
+}
+
+function jstDateStamp(ts){
+  const d = new Date(new Date(ts).toLocaleString('en-US', { timeZone:'Asia/Tokyo' }));
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=240');
@@ -49,6 +128,20 @@ export default async function handler(req, res){
     analyzed.isBaseline = isBaseline; // FIX: propagate baseline flag through the whole pipeline
     const llm = await aiAssessment(analyzed, articles, sourceError);
     const payload = buildPayload(analyzed, articles, llm, { sourceError, degraded, sourceReport, isBaseline });
+
+    // Server-side history (optional — no-ops cleanly if Redis isn't configured).
+    const [serverDelta24h, serverPreviousDay] = await Promise.all([
+      getServerDelta24h(),
+      getServerPreviousDay()
+    ]);
+    payload.serverDelta24h = serverDelta24h;
+    payload.serverPreviousDay = serverPreviousDay;
+    if(!isBaseline){
+      // Don't log baseline/placeholder scores into real history — they'd
+      // pollute the 24H delta and next-day follow-up with fabricated data.
+      await logScoreToRedis({ score: payload.score, state: payload.state, topRegion: analyzed.regions[0]?.name || 'Global', watchNext: payload.watchNext });
+    }
+
     res.status(200).json(payload);
   }catch(error){
     res.status(200).json(fallbackPayload(error?.message || 'unknown'));
@@ -1161,6 +1254,7 @@ function fallbackPayload(error){
   // baseline path above.
   return {
     ok:true, mode:'fallback', isBaseline:true, error, aiMode:'RULE BASED', updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:20, sourceHealth:0,
+    serverDelta24h:{ available:false }, serverPreviousDay:null,
     dataStatus:'FALLBACK — NOT LIVE',
     cacheTtlMinutes: Math.round(CACHE_TTL_MS / 60000),
     brief:'ORACLE encountered an error and has no live data. Showing conservative fallback values only.',
