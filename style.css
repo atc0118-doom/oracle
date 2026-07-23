@@ -72,3 +72,13 @@
 /* ORACLE score-scope notes: WHY SCORE now geopolitical-only, Disaster/Health separated */
 .drivers-note{margin:14px 0 0;padding-top:14px;border-top:1px solid rgba(255,255,255,.06);color:#7d8792;font-size:11px;line-height:1.6}
 .disaster-health-note{margin:0 0 16px;color:#8f99a5;font-size:11px;line-height:1.6}
+
+/* ORACLE map tap-to-expand modal */
+.map-container{cursor:pointer}
+.map-expand-hint{margin:10px 0 0;color:#6b7480;font-size:10px;letter-spacing:.08em;text-align:center}
+.map-expand-modal{display:none;position:fixed;inset:0;z-index:60;background:rgba(4,6,8,.86);padding:20px;overflow-y:auto}
+.map-expand-modal.open{display:flex;align-items:center;justify-content:center}
+.map-expand-card{position:relative;width:100%;max-width:960px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px 20px}
+.map-expand-close{position:absolute;top:12px;right:14px;background:transparent;border:0;color:#aab1bb;font-size:26px;line-height:1;cursor:pointer;padding:4px 8px}
+.map-expand-close:active{color:var(--yellow)}
+.map-container-expanded{cursor:default}

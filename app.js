@@ -417,8 +417,9 @@ function mapColorForScore(score){
   return STATE_COLORS[state] || '#c9ab45';
 }
 
-async function renderWorldMap(data){
-  const container = $('mapContainer');
+async function renderWorldMap(data, containerEl, legendEl){
+  const container = containerEl || $('mapContainer');
+  const legend = legendEl || $('mapLegend');
   if(!container || typeof d3 === 'undefined' || typeof topojson === 'undefined') return;
 
   let world;
@@ -478,15 +479,36 @@ async function renderWorldMap(data){
         : d.properties.name;
     });
 
-  renderMapLegend();
+  renderMapLegend(legend);
 }
 
-function renderMapLegend(){
-  const el = $('mapLegend');
-  if(!el) return;
+function renderMapLegend(el){
+  const target = el || $('mapLegend');
+  if(!target) return;
   const stops = [['STABLE', STATE_COLORS.STABLE], ['WATCH', STATE_COLORS.WATCH], ['HIGH', STATE_COLORS.HIGH], ['CRITICAL', STATE_COLORS.CRITICAL]];
-  el.innerHTML = stops.map(([label, color]) => `<span class="map-legend-item"><i style="background:${color}"></i>${label}</span>`).join('')
+  target.innerHTML = stops.map(([label, color]) => `<span class="map-legend-item"><i style="background:${color}"></i>${label}</span>`).join('')
     + `<span class="map-legend-item map-legend-none"><i></i>NOT MONITORED</span>`;
+}
+
+function ensureMapExpandModal(){
+  let modal = $('mapExpandModal');
+  if(modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'mapExpandModal';
+  modal.className = 'map-expand-modal';
+  modal.innerHTML = `<div class="map-expand-card" role="dialog" aria-modal="true" aria-label="Expanded global risk map"><button class="map-expand-close" type="button" aria-label="Close">×</button><div id="mapExpandContainer" class="map-container map-container-expanded"><div class="map-loading">Loading map…</div></div><div id="mapExpandLegend" class="map-legend"></div></div>`;
+  document.body.appendChild(modal);
+  const close = ()=>modal.classList.remove('open');
+  modal.querySelector('.map-expand-close').addEventListener('click', close);
+  modal.addEventListener('click', e=>{ if(e.target === modal) close(); });
+  return modal;
+}
+
+function openMapExpanded(){
+  const modal = ensureMapExpandModal();
+  modal.classList.add('open');
+  // Render after the modal is visible so clientWidth reflects its real (larger) size.
+  requestAnimationFrame(()=> renderWorldMap(currentData || fallback, $('mapExpandContainer'), $('mapExpandLegend')));
 }
 
 function renderOtherNews(items){
@@ -970,6 +992,7 @@ function setup(){
   if(params.get('admin')) $('adminPanel')?.classList.add('open');
   $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
   $('shareCardBtn')?.addEventListener('click', handleShareCard);
+  $('mapContainer')?.addEventListener('click', openMapExpanded);
   $('disclaimerToggle')?.addEventListener('click', ()=>{
     const detail = $('disclaimerDetail');
     const btn = $('disclaimerToggle');
