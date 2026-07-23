@@ -388,6 +388,107 @@ async function handleShareCard(){
   }
 }
 
+// ---------------------------------------------------------------------------
+// GLOBAL RISK MAP: colors actual countries by the score of the ORACLE region
+// they belong to. Deliberately narrow mapping — e.g. "Ukraine" colors only
+// Ukraine, not Russia; "Taiwan Strait" colors only Taiwan, not mainland
+// China — so a huge, mostly-uninvolved landmass doesn't visually dominate
+// the map and imply a scale of risk the data doesn't support. "Global Cyber"
+// has no fixed geography, so it's intentionally left off the map.
+// ---------------------------------------------------------------------------
+const REGION_COUNTRY_IDS = {
+  'Ukraine': ['804'],
+  'Taiwan Strait': ['158'],
+  'Middle East': ['376','422','275','760','364','887'], // Israel, Lebanon, Palestine, Syria, Iran, Yemen
+  'South China Sea': ['608','704','458','096'], // Philippines, Vietnam, Malaysia, Brunei
+  'Korea': ['408','410'] // North Korea, South Korea
+};
+
+let worldAtlasCache = null;
+async function loadWorldAtlas(){
+  if(worldAtlasCache) return worldAtlasCache;
+  const res = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+  worldAtlasCache = await res.json();
+  return worldAtlasCache;
+}
+
+function mapColorForScore(score){
+  const state = stateFromScore(score);
+  return STATE_COLORS[state] || '#c9ab45';
+}
+
+async function renderWorldMap(data){
+  const container = $('mapContainer');
+  if(!container || typeof d3 === 'undefined' || typeof topojson === 'undefined') return;
+
+  let world;
+  try{
+    world = await loadWorldAtlas();
+  }catch(_){
+    container.innerHTML = '<div class="map-loading">Map data unavailable right now.</div>';
+    return;
+  }
+
+  const regionByName = {};
+  (data.regions || []).forEach(r => { regionByName[r.name] = r; });
+
+  // Build id -> {score, regionName} for every country tied to a matched region.
+  const idToRegion = {};
+  Object.entries(REGION_COUNTRY_IDS).forEach(([regionName, ids])=>{
+    const region = regionByName[regionName];
+    if(!region) return; // region had no verified signal this cycle — leave its countries uncolored
+    ids.forEach(id => { idToRegion[id] = region; });
+  });
+
+  const width = container.clientWidth || 600;
+  const height = Math.round(width * 0.52);
+
+  const countries = topojson.feature(world, world.objects.countries).features;
+  const projection = d3.geoNaturalEarth1().fitSize([width, height], { type:'Sphere' });
+  const path = d3.geoPath(projection);
+
+  container.innerHTML = '';
+  const svg = d3.select(container).append('svg')
+    .attr('viewBox', `0 0 ${width} ${height}`)
+    .attr('width', '100%')
+    .attr('height', 'auto')
+    .attr('role', 'img')
+    .attr('aria-label', 'World map with monitored risk regions highlighted');
+
+  svg.append('path')
+    .attr('d', path({ type:'Sphere' }))
+    .attr('fill', '#0c1015');
+
+  svg.selectAll('path.country')
+    .data(countries)
+    .join('path')
+    .attr('class', 'country')
+    .attr('d', path)
+    .attr('fill', d => {
+      const matched = idToRegion[String(d.id)];
+      return matched ? mapColorForScore(matched.score) : '#181e25';
+    })
+    .attr('stroke', '#05070a')
+    .attr('stroke-width', 0.4)
+    .append('title')
+    .text(d => {
+      const matched = idToRegion[String(d.id)];
+      return matched
+        ? `${d.properties.name} — ${matched.name}: ${matched.score} (${stateFromScore(matched.score)})`
+        : d.properties.name;
+    });
+
+  renderMapLegend();
+}
+
+function renderMapLegend(){
+  const el = $('mapLegend');
+  if(!el) return;
+  const stops = [['STABLE', STATE_COLORS.STABLE], ['WATCH', STATE_COLORS.WATCH], ['HIGH', STATE_COLORS.HIGH], ['CRITICAL', STATE_COLORS.CRITICAL]];
+  el.innerHTML = stops.map(([label, color]) => `<span class="map-legend-item"><i style="background:${color}"></i>${label}</span>`).join('')
+    + `<span class="map-legend-item map-legend-none"><i></i>NOT MONITORED</span>`;
+}
+
 function render(data){
   currentData = data || fallback;
   const score = clamp(currentData.score, 0, 100);
@@ -457,6 +558,7 @@ function render(data){
   renderMetrics(currentData.metrics || fallback.metrics);
   renderCalc(currentData);
   recordVisitAndDiff(currentData);
+  renderWorldMap(currentData);
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
 }
