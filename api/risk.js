@@ -153,9 +153,12 @@ export default async function handler(req, res){
     let llm;
     if(isBaseline){
       llm = null;
+      console.log('[oracle:ai-cache] SKIPPED (baseline mode — no OpenAI call made)');
     }else if(ORACLE_CACHE.llm && ORACLE_CACHE.llmTs === ORACLE_CACHE.ts){
       llm = ORACLE_CACHE.llm;
+      console.log(`[oracle:ai-cache] HIT — reused cached AI result (article batch ts=${ORACLE_CACHE.ts})`);
     }else{
+      console.log(`[oracle:ai-cache] MISS — calling OpenAI now (article batch ts=${ORACLE_CACHE.ts})`);
       llm = await aiAssessment(analyzed, articles, sourceError);
       ORACLE_CACHE.llm = llm;
       ORACLE_CACHE.llmTs = ORACLE_CACHE.ts;
