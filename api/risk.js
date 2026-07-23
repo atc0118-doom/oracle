@@ -31,10 +31,23 @@ const CATEGORY_KEYWORDS = {
   Cyber: ['cyber','hack','malware','ransomware','data breach','ddos','spyware','phishing'],
   Logistics: ['shipping','port','tanker','supply chain','freight','container','canal','sea lane','logistics','vessel'],
   Finance: ['market','oil','gas','inflation','stocks','bond','currency','rate','bank','gold','dollar'],
-  Disaster: ['earthquake','flood','wildfire','volcano','storm','hurricane','typhoon','tsunami','drought']
+  Disaster: ['earthquake','flood','wildfire','volcano','storm','hurricane','typhoon','tsunami','drought'],
+  // FIX (coverage gap): there was previously NO keyword category for disease
+  // outbreaks at all — an active pandemic or epidemic simply had no bucket to
+  // be counted in, regardless of how much it was in the news.
+  Health: ['outbreak','epidemic','pandemic','disease outbreak','who ','world health organization','cdc','infectious disease','vaccine','quarantine']
 };
 
-const WEIGHTS = { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
+// FIX (score scope): Disaster and Health used to be weighted into the same
+// single ORACLE INDEX as Military/Diplomatic/Cyber/Logistics/Finance. That
+// meant a major earthquake or disease outbreak — with zero geopolitical
+// tension involved — could move the "world risk" number on its own, even
+// though every other part of the UI (regions, map, top event) frames this as
+// a geopolitical-tension index. Disaster/Health are still tracked and shown
+// (see the separate DISASTER & HEALTH MONITORING card), just no longer
+// weighted into the score itself. Their weight here is 0 on purpose.
+const WEIGHTS = { Military:.38, Diplomatic:.22, Cyber:.16, Logistics:.16, Finance:.08, Disaster:0, Health:0 };
+const NON_SCORING_CATEGORIES = ['Disaster','Health'];
 const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null });
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6500;
@@ -210,7 +223,14 @@ async function fetchWithTimeout(url, options={}){
 }
 
 async function fetchGdelt(){
-  const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China)');
+  // FIX (coverage gap): this query used to only include the 6 fixed regions
+  // ORACLE scores + generic conflict/disaster terms. Real conflicts and
+  // outbreaks outside that fixed list (Sudan, Myanmar, DR Congo, Haiti,
+  // Venezuela, a disease outbreak, etc.) had no keyword here at all, so they
+  // were invisible from the fetch stage onward — no amount of scoring logic
+  // downstream could surface them. This doesn't make ORACLE comprehensive
+  // (a fixed keyword list never can be), but it closes the most obvious gaps.
+  const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR outbreak OR epidemic OR pandemic OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China OR Sudan OR Myanmar OR "DR Congo" OR Haiti OR Venezuela OR Sahel)');
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
@@ -227,7 +247,7 @@ async function fetchGdelt(){
 }
 
 async function fetchGoogleNews(){
-  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China) when:1d');
+  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China OR Sudan OR Myanmar OR "DR Congo" OR Haiti OR Venezuela OR outbreak OR epidemic OR pandemic) when:1d');
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('google_news ' + r.status);
@@ -238,7 +258,7 @@ async function fetchGoogleNews(){
 async function fetchGuardian(){
   const key = process.env.GUARDIAN_API_KEY;
   if(!key) return [];
-  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China');
+  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China OR Sudan OR Myanmar OR "DR Congo" OR Haiti OR Venezuela OR outbreak OR epidemic OR pandemic');
   const url = `https://content.guardianapis.com/search?q=${q}&section=world|technology|business|environment&show-fields=trailText&order-by=newest&page-size=20&api-key=${key}`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('guardian ' + r.status);
@@ -666,7 +686,7 @@ CRITICAL SAFETY / RELIABILITY RULES:
 X post rules:
 - Always include the score and state.
 - Avoid definitive claims unless directly supported by supplied headlines.
-- hashtags must always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Add topical tags only when supported by supplied headlines, such as Ukraine, Russia, Taiwan, China, MiddleEast, Iran, Israel, CyberSecurity, Earthquake, Logistics, Energy, Geopolitics.
+- hashtags must always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Beyond those five, add whatever short, real, on-topic tags actually match the supplied headlines — do not limit yourself to a fixed example list. If the headlines involve Sudan, Myanmar, DRC, Haiti, Venezuela, a disease outbreak, or any other topic not in a typical example set, tag it plainly (e.g. Sudan, Myanmar, PublicHealth, Pandemic) rather than omitting it or forcing it into an unrelated existing tag.
 
 Global score: ${analyzed.final}
 Drivers: ${JSON.stringify(analyzed.drivers)}
@@ -1103,6 +1123,36 @@ function timelineClassification(article, analyzed){
   return { regions:[], drivers:[], primaryRegion:'Global', primaryDriver:'General', evidenceWeight:0 };
 }
 
+// FIX (coverage gap): ORACLE only scores 6 fixed regions. A real, heavily-
+// reported conflict or crisis outside that list (Sudan, Myanmar, Haiti,
+// Venezuela, etc.) would previously just vanish — it might get fetched by
+// the collectors, get a Military/Diplomatic driver bump, but never surface
+// anywhere a person could actually see it, because nothing renders
+// unmatched articles. This pulls out headlines that matched at least one
+// risk category (so it's not just random noise) but NO fixed region, sorted
+// by the same event-scoring already used for the top event, so real gaps in
+// coverage are visible on the page instead of silently dropped.
+function buildOtherSignificantNews(analyzed){
+  const scores = Array.isArray(analyzed?.articleScores) ? analyzed.articleScores : [];
+  const unmatched = scores.filter(x => (!x.matchedRegions || x.matchedRegions.length === 0) && Object.keys(x.cats || {}).length > 0);
+  const seenTitles = new Set();
+  return unmatched
+    .sort((a,b)=>b.score-a.score)
+    .filter(x=>{
+      const key = String(x.article?.title || '').toLowerCase();
+      if(!key || seenTitles.has(key)) return false;
+      seenTitles.add(key);
+      return true;
+    })
+    .slice(0,5)
+    .map(x=>({
+      title: x.article?.title || '',
+      source: x.article?.source || 'Source',
+      url: x.article?.url || '#',
+      primaryDriver: x.primaryDriver || 'General'
+    }));
+}
+
 function buildPayload(analyzed, articles, llm, meta={}){
   const score = analyzed.final;
   const state = stateFromScore(score);
@@ -1211,13 +1261,19 @@ function buildPayload(analyzed, articles, llm, meta={}){
     topEvent: isBaseline
       ? { title:'No live top event available', summary:'ORACLE has no verified public signals to select a top event from right now.', source:'ORACLE System', url:'https://www.gdeltproject.org/' }
       : { title: top.title, summary: topEventSummary(top, analyzed), source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
-    drivers: analyzed.drivers,
-    driverEvidence: analyzed.driverEvidence || {},
+    drivers: Object.fromEntries(Object.entries(analyzed.drivers).filter(([k])=>!NON_SCORING_CATEGORIES.includes(k))),
+    driverEvidence: Object.fromEntries(Object.entries(analyzed.driverEvidence || {}).filter(([k])=>!NON_SCORING_CATEGORIES.includes(k))),
+    // FIX (score scope): informational-only, does not feed the ORACLE INDEX.
+    disasterHealth: {
+      Disaster: analyzed.drivers.Disaster || 0,
+      Health: analyzed.drivers.Health || 0
+    },
     weights: WEIGHTS,
     calculation: { raw: round1(analyzed.raw), stability: round1(analyzed.adjustment), duplicateNoise: round1(analyzed.duplicateReduction), globalNormalization: round1(analyzed.globalNormalization), containment: round1(analyzed.adjustment + analyzed.duplicateReduction + analyzed.globalNormalization), final: score, reasoning: buildReasoning(analyzed, topRegion), adjustmentReasons: analyzed.adjustmentReasons || [] },
     regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend, signals:round1(r.raw || r.count || 0), sources:r.sources || 0, articles:r.articles || 0, terms:r.terms || [], freshness:r.freshness || 0, breakdown:r.breakdown || {} })),
     inactiveRegions: (analyzed.inactiveRegions || []).map(r=>({ name:r.name, trend:'No verified activity' })),
     timeline: timeline.length ? timeline : [{time: isBaseline ? 'N/A' : 'NOW', text: isBaseline ? 'No live signals available.' : 'Monitoring active.'}],
+    otherSignificantNews: isBaseline ? [] : buildOtherSignificantNews(analyzed),
     // FIX (honesty): these four tiles used to read like output from dedicated
     // feeds (a flight tracker, a cyber-threat feed, a shipping/logistics feed).
     // There are no such feeds — every value here is the SAME keyword-matched
@@ -1267,8 +1323,8 @@ function fallbackPayload(error){
     sourceConfidence:{availableSources:[],limitedSources:['GDELT','Google News','USGS','NOAA','Guardian'],note:'Live public source retrieval failed entirely; all figures are fallback placeholders, not verified data.'},
     verifiedSources:[], evidence:{sourceCount:0, sources:[], articleCount:0, crossChecks:0, reliability:0}, evidenceStrength:'NONE', articleCount:0,
     topEvent:{ title:'No live top event available', summary:'No verified public signals are available due to an internal error.', source:'ORACLE System', url:'https://www.gdeltproject.org/' },
-    drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28, adjustmentReasons:['Fallback mode: adjustment reasons are not available because live scoring did not run.'] },
+    drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10 }, disasterHealth:{ Disaster:0, Health:0 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28, adjustmentReasons:['Fallback mode: adjustment reasons are not available because live scoring did not run.'] },
     regions:[{name:'Ukraine',score:44,change:'+1',trend:'Watch'},{name:'Taiwan Strait',score:39,change:'0',trend:'Watch'},{name:'Middle East',score:37,change:'0',trend:'Stable'},{name:'South China Sea',score:31,change:'0',trend:'Stable'},{name:'Korea',score:25,change:'0',trend:'Stable'}],
-    timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED', note:'Fallback mode: no scoring ran, so these tiles are fixed placeholders, not even keyword-derived values.' }
+    timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], otherSignificantNews:[], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED', note:'Fallback mode: no scoring ran, so these tiles are fixed placeholders, not even keyword-derived values.' }
   };
 }
