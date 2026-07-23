@@ -59,3 +59,16 @@
 .map-legend-item i{width:10px;height:10px;border-radius:3px;display:inline-block}
 .map-legend-none i{background:#2c3540;border:1px solid var(--line)}
 @media(max-width:720px){.map-note{font-size:10px}}
+
+/* ORACLE inactive-regions transparency note */
+.inactive-regions-note{margin:14px 0 0;padding-top:14px;border-top:1px solid rgba(255,255,255,.06);color:#7d8792;font-size:11px;line-height:1.6}
+.inactive-regions-note:empty{display:none}
+
+/* ORACLE other-significant-news card (coverage-gap transparency) */
+.other-news-note{margin:0 0 16px;color:#8f99a5;font-size:11px;line-height:1.6}
+#otherNewsList a{color:#cdd2d8;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.15)}
+#otherNewsList a:hover{border-color:var(--yellow);color:var(--yellow)}
+
+/* ORACLE score-scope notes: WHY SCORE now geopolitical-only, Disaster/Health separated */
+.drivers-note{margin:14px 0 0;padding-top:14px;border-top:1px solid rgba(255,255,255,.06);color:#7d8792;font-size:11px;line-height:1.6}
+.disaster-health-note{margin:0 0 16px;color:#8f99a5;font-size:11px;line-height:1.6}

@@ -489,6 +489,28 @@ function renderMapLegend(){
     + `<span class="map-legend-item map-legend-none"><i></i>NOT MONITORED</span>`;
 }
 
+function renderOtherNews(items){
+  const card = $('otherNewsCard');
+  const list = $('otherNewsList');
+  if(!card || !list) return;
+  const arr = Array.isArray(items) ? items.slice(0,5) : [];
+  if(!arr.length){ card.style.display = 'none'; return; }
+  card.style.display = '';
+  list.innerHTML = arr.map(n => n.url && n.url !== '#'
+    ? `<li><a href="${escapeAttr(n.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(n.source || 'Source')}: ${escapeHtml(String(n.title || '').slice(0,120))}</a></li>`
+    : `<li>${escapeHtml(n.source || 'Source')}: ${escapeHtml(String(n.title || '').slice(0,120))}</li>`
+  ).join('');
+}
+
+function renderDisasterHealth(dh){
+  const el = $('disasterHealthDrivers');
+  if(!el) return;
+  const entries = Object.entries(dh || { Disaster:0, Health:0 });
+  el.innerHTML = entries.map(([k,v])=>`
+    <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
+  `).join('');
+}
+
 function render(data){
   currentData = data || fallback;
   const score = clamp(currentData.score, 0, 100);
@@ -553,12 +575,14 @@ function render(data){
   $('eventLink').href = e.url || '#';
 
   renderDrivers(currentData.drivers || fallback.drivers);
-  renderRegions(currentData.regions || fallback.regions);
+  renderRegions(currentData.regions || fallback.regions, currentData.inactiveRegions);
   renderTimeline(currentData.timeline || fallback.timeline);
   renderMetrics(currentData.metrics || fallback.metrics);
   renderCalc(currentData);
   recordVisitAndDiff(currentData);
   renderWorldMap(currentData);
+  renderOtherNews(currentData.otherSignificantNews);
+  renderDisasterHealth(currentData.disasterHealth);
   if($('debugBox')) $('debugBox').textContent = JSON.stringify(currentData, null, 2);
   lastLoadedAt = Date.now();
 }
@@ -759,12 +783,25 @@ function renderDrivers(drivers){
     <div class="driver"><span>${k}</span><div><i style="width:${clamp(v,0,100)}%"></i></div><strong>${Math.round(v)}</strong></div>
   `).join('');
 }
-function renderRegions(regions){
+function renderRegions(regions, inactiveRegions){
   const el = $('regions');
   const active = (regions || []).filter(r=>Number(r.score || 0) > 0 && Number(r.signals || 0) > 0 && Number(r.sources || 0) > 0).slice(0,5);
   el.innerHTML = active.map((r,i)=>`<button class="rank evidence-trigger" type="button" data-region="${escapeAttr(r.name)}"><div class="ranknum">${String(i+1).padStart(2,'0')}</div><div><div class="rankname">${escapeHtml(r.name)}</div><div class="rankmeta">${escapeHtml(r.trend || 'Watch')} ${r.change ? `• ${escapeHtml(r.change)}` : ''} · ${Number(r.signals || 0).toFixed(1)} signals · ${r.sources || 0} sources</div></div><div class="rankscore">${Math.round(r.score)}</div><div class="rankbar"><i style="width:${clamp(r.score,0,100)}%"></i></div></button>`).join('');
   if(!active.length) el.innerHTML = '<p class="no-active-regions">No verified regional activity in the current window.</p>';
   el.querySelectorAll('[data-region]').forEach(btn=>btn.addEventListener('click', ()=>showRegionEvidence(btn.dataset.region)));
+
+  // FIX (transparency): the API already returns which monitored regions had
+  // zero matching articles this cycle (inactiveRegions), but the frontend
+  // silently dropped it — so if only 2 of 6 tracked regions ever showed up,
+  // there was no way to tell whether that was a bug or just "no qualifying
+  // headlines came in for the others." Showing the list directly answers that.
+  const names = (inactiveRegions || []).map(r=>r.name).filter(Boolean);
+  const noteEl = $('inactiveRegionsNote');
+  if(noteEl){
+    noteEl.textContent = names.length
+      ? `Also tracked, no verified signal this cycle: ${names.join(', ')}.`
+      : '';
+  }
 }
 function renderTimeline(timeline){
   const list = (timeline || []).slice(0,5);

@@ -91,7 +91,7 @@
       </article>
 
       <article class="card reveal contributors-card">
-        <div class="card-head"><b>TOP CONTRIBUTORS</b><span>SCORE SOURCES</span></div>
+        <div class="card-head"><b>TOP SCORE CONTRIBUTORS</b><span>REGIONS, BY SCORE SHARE</span></div>
         <div id="contributors"></div>
       </article>
 
@@ -105,12 +105,20 @@
       <article class="card reveal">
         <div class="card-head"><b>WHY SCORE?</b><span id="rawScore">RAW —</span></div>
         <div id="drivers"></div>
+        <p class="drivers-note">ORACLE INDEX reflects these 5 geopolitical drivers only. Earthquakes and disease outbreaks are tracked separately below and do not move this score.</p>
       </article>
 
       <article class="card reveal">
         <div class="card-head"><b>HOT REGIONS</b><span>AUTO RANKED</span></div>
         <div id="regions"></div>
+        <p class="inactive-regions-note" id="inactiveRegionsNote"></p>
       </article>
+    </section>
+
+    <section class="card reveal" id="disasterHealthCard">
+      <div class="card-head"><b>DISASTER & HEALTH MONITORING</b><span>NOT SCORED</span></div>
+      <p class="disaster-health-note">Tracked from the same public headlines, shown for situational awareness — but intentionally excluded from the ORACLE INDEX above, since an earthquake or outbreak isn't geopolitical tension.</p>
+      <div id="disasterHealthDrivers"></div>
     </section>
 
     <section class="card reveal map-card" id="mapCard">
@@ -120,6 +128,12 @@
         <div class="map-loading" id="mapLoading">Loading map…</div>
       </div>
       <div class="map-legend" id="mapLegend"></div>
+    </section>
+
+    <section class="card reveal" id="otherNewsCard" style="display:none">
+      <div class="card-head"><b>OTHER SIGNIFICANT NEWS</b><span>NOT SCORED</span></div>
+      <p class="other-news-note">ORACLE's index only covers 6 fixed regions (Ukraine, Middle East, Taiwan Strait, South China Sea, Korea, Global Cyber). These headlines matched a risk category but no fixed region, so they aren't reflected in the score, map, or Hot Regions above — shown here so real gaps in coverage stay visible instead of silently disappearing.</p>
+      <ul class="intel-list" id="otherNewsList"></ul>
     </section>
 
     <section class="grid">
