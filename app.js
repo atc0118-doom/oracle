@@ -457,7 +457,7 @@ async function renderWorldMap(data){
 
   svg.append('path')
     .attr('d', path({ type:'Sphere' }))
-    .attr('fill', '#0c1015');
+    .attr('fill', '#151b23');
 
   svg.selectAll('path.country')
     .data(countries)
@@ -466,10 +466,10 @@ async function renderWorldMap(data){
     .attr('d', path)
     .attr('fill', d => {
       const matched = idToRegion[String(d.id)];
-      return matched ? mapColorForScore(matched.score) : '#181e25';
+      return matched ? mapColorForScore(matched.score) : '#2c3540';
     })
-    .attr('stroke', '#05070a')
-    .attr('stroke-width', 0.4)
+    .attr('stroke', '#0a0e13')
+    .attr('stroke-width', 0.5)
     .append('title')
     .text(d => {
       const matched = idToRegion[String(d.id)];
@@ -933,6 +933,14 @@ function setup(){
   if(params.get('admin')) $('adminPanel')?.classList.add('open');
   $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
   $('shareCardBtn')?.addEventListener('click', handleShareCard);
+  $('disclaimerToggle')?.addEventListener('click', ()=>{
+    const detail = $('disclaimerDetail');
+    const btn = $('disclaimerToggle');
+    if(!detail || !btn) return;
+    const isHidden = detail.hasAttribute('hidden');
+    if(isHidden){ detail.removeAttribute('hidden'); btn.textContent = 'Details ▴'; btn.setAttribute('aria-expanded','true'); }
+    else{ detail.setAttribute('hidden',''); btn.textContent = 'Details ▾'; btn.setAttribute('aria-expanded','false'); }
+  });
   $('closeModal').addEventListener('click', ()=> $('scoreModal').classList.remove('open'));
   $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
   document.addEventListener('keydown', e=>{ if(e.key === 'Escape') $('scoreModal').classList.remove('open'); });
