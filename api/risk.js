@@ -1224,7 +1224,16 @@ function buildPayload(analyzed, articles, llm, meta={}){
   // are excluded instead of being presented as risk signals.
   const timeline = [...realArticles]
     .map((a,i)=>({ article:a, index:i, cls: timelineClassification(a, analyzed) }))
-    .filter(({cls}) => (cls.regions && cls.regions.length) || (cls.drivers && cls.drivers.length))
+    // FIX (timeline precision): this used to require a region match OR a
+    // category match. That let through articles that mention a monitored
+    // region's name but carry zero risk-category content at all — e.g. a
+    // Taiwan culture/lifestyle story ("book sales rocket in Taiwan") showed
+    // up tagged "TAIWAN STRAIT" in the risk timeline with no Military/
+    // Diplomatic/Cyber/etc. tag beside it, because merely mentioning
+    // "Taiwan" was enough. Requiring BOTH now means an article only counts
+    // as a risk signal if it's tied to a monitored region AND actually
+    // matched a risk category — a bare place-name mention isn't a signal.
+    .filter(({cls}) => (cls.regions && cls.regions.length) && (cls.drivers && cls.drivers.length))
     .sort((x,y)=>{
       const ta = new Date(x.article?.seen || 0).getTime();
       const tb = new Date(y.article?.seen || 0).getTime();
