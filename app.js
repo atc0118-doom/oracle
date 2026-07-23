@@ -417,9 +417,10 @@ function mapColorForScore(score){
   return STATE_COLORS[state] || '#c9ab45';
 }
 
-async function renderWorldMap(data, containerEl, legendEl){
+async function renderWorldMap(data, containerEl, legendEl, infoEl){
   const container = containerEl || $('mapContainer');
   const legend = legendEl || $('mapLegend');
+  const info = infoEl || $('mapCountryInfo');
   if(!container || typeof d3 === 'undefined' || typeof topojson === 'undefined') return;
 
   let world;
@@ -460,6 +461,12 @@ async function renderWorldMap(data, containerEl, legendEl){
     .attr('d', path({ type:'Sphere' }))
     .attr('fill', '#151b23');
 
+  // FIX (mobile taps): SVG <title> only shows on mouse hover in almost every
+  // mobile browser — it never reliably shows on a touch tap. Relying on it
+  // meant "tap a country to see its score" simply didn't work on phones.
+  // Each country now has a real click handler that writes the info into a
+  // visible on-screen label instead, which works identically on touch and
+  // desktop.
   svg.selectAll('path.country')
     .data(countries)
     .join('path')
@@ -471,13 +478,16 @@ async function renderWorldMap(data, containerEl, legendEl){
     })
     .attr('stroke', '#0a0e13')
     .attr('stroke-width', 0.5)
-    .append('title')
-    .text(d => {
+    .style('cursor', 'pointer')
+    .on('click', (event, d)=>{
+      if(!info) return;
       const matched = idToRegion[String(d.id)];
-      return matched
+      info.textContent = matched
         ? `${d.properties.name} — ${matched.name}: ${matched.score} (${stateFromScore(matched.score)})`
-        : d.properties.name;
+        : `${d.properties.name} — not tied to a monitored region.`;
     });
+
+  if(info) info.textContent = 'Tap a colored country to see its region and score.';
 
   renderMapLegend(legend);
 }
@@ -496,7 +506,7 @@ function ensureMapExpandModal(){
   modal = document.createElement('div');
   modal.id = 'mapExpandModal';
   modal.className = 'map-expand-modal';
-  modal.innerHTML = `<div class="map-expand-card" role="dialog" aria-modal="true" aria-label="Expanded global risk map"><button class="map-expand-close" type="button" aria-label="Close">×</button><div id="mapExpandContainer" class="map-container map-container-expanded"><div class="map-loading">Loading map…</div></div><div id="mapExpandLegend" class="map-legend"></div></div>`;
+  modal.innerHTML = `<div class="map-expand-card" role="dialog" aria-modal="true" aria-label="Expanded global risk map"><button class="map-expand-close" type="button" aria-label="Close">×</button><div id="mapExpandContainer" class="map-container map-container-expanded"><div class="map-loading">Loading map…</div></div><p class="map-country-info" id="mapExpandCountryInfo">Tap a colored country to see its region and score.</p><div id="mapExpandLegend" class="map-legend"></div></div>`;
   document.body.appendChild(modal);
   const close = ()=>modal.classList.remove('open');
   modal.querySelector('.map-expand-close').addEventListener('click', close);
@@ -508,7 +518,7 @@ function openMapExpanded(){
   const modal = ensureMapExpandModal();
   modal.classList.add('open');
   // Render after the modal is visible so clientWidth reflects its real (larger) size.
-  requestAnimationFrame(()=> renderWorldMap(currentData || fallback, $('mapExpandContainer'), $('mapExpandLegend')));
+  requestAnimationFrame(()=> renderWorldMap(currentData || fallback, $('mapExpandContainer'), $('mapExpandLegend'), $('mapExpandCountryInfo')));
 }
 
 function renderOtherNews(items){

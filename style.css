@@ -82,3 +82,6 @@
 .map-expand-close{position:absolute;top:12px;right:14px;background:transparent;border:0;color:#aab1bb;font-size:26px;line-height:1;cursor:pointer;padding:4px 8px}
 .map-expand-close:active{color:var(--yellow)}
 .map-container-expanded{cursor:default}
+
+/* ORACLE map country-info label (reliable tap feedback, replaces unreliable SVG title hover-tooltip) */
+.map-country-info{margin:12px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.02);color:#cdd2d8;font-size:12px;line-height:1.5;min-height:1.4em}
