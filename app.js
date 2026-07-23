@@ -975,8 +975,8 @@ function setup(){
     const btn = $('disclaimerToggle');
     if(!detail || !btn) return;
     const isHidden = detail.hasAttribute('hidden');
-    if(isHidden){ detail.removeAttribute('hidden'); btn.textContent = 'Details ▴'; btn.setAttribute('aria-expanded','true'); }
-    else{ detail.setAttribute('hidden',''); btn.textContent = 'Details ▾'; btn.setAttribute('aria-expanded','false'); }
+    if(isHidden){ detail.removeAttribute('hidden'); btn.setAttribute('aria-expanded','true'); }
+    else{ detail.setAttribute('hidden',''); btn.setAttribute('aria-expanded','false'); }
   });
   $('closeModal').addEventListener('click', ()=> $('scoreModal').classList.remove('open'));
   $('scoreModal').addEventListener('click', (e)=>{ if(e.target.id === 'scoreModal') $('scoreModal').classList.remove('open'); });
