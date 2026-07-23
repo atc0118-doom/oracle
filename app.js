@@ -263,7 +263,7 @@ function getRealDelta24h(log, currentScore){
 // ---------------------------------------------------------------------------
 const STATE_COLORS = { STABLE:'#47b881', WATCH:'#c9ab45', HIGH:'#e08a3c', CRITICAL:'#e5484d' };
 
-function drawShareCard(){
+async function drawShareCard(){
   const canvas = $('shareCanvas');
   if(!canvas) return null;
   const ctx = canvas.getContext('2d');
@@ -272,14 +272,13 @@ function drawShareCard(){
   const state = currentData?.state || stateFromScore(score);
   const stateColor = STATE_COLORS[state] || '#c9ab45';
   const topRegion = (currentData?.regions && currentData.regions[0]?.name) || 'Global';
-  const history = loadHistory().slice(-14);
 
   // Background
   const bg = ctx.createLinearGradient(0,0,0,H);
   bg.addColorStop(0,'#0b0e12'); bg.addColorStop(1,'#05070a');
   ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
   ctx.fillStyle = 'rgba(255,255,255,.03)';
-  ctx.beginPath(); ctx.arc(W/2, H*0.34, 380, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W/2, H*0.22, 320, 0, Math.PI*2); ctx.fill();
 
   // Brand
   ctx.textAlign = 'left';
@@ -300,51 +299,81 @@ function drawShareCard(){
 
   // ORACLE INDEX label
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#828b96'; ctx.font = '600 26px Arial';
-  ctx.fillText('O R A C L E   I N D E X', W/2, 240);
+  ctx.fillStyle = '#828b96'; ctx.font = '600 24px Arial';
+  ctx.fillText('O R A C L E   I N D E X', W/2, 200);
 
-  // Big score
+  // Big score (smaller than before to make room for the map)
   ctx.fillStyle = '#f4f6f8';
-  ctx.font = '800 320px Arial';
-  ctx.fillText(String(score), W/2, 560);
+  ctx.font = '800 210px Arial';
+  ctx.fillText(String(score), W/2, 390);
 
   // State
   ctx.fillStyle = stateColor;
-  ctx.font = '700 56px Arial';
-  ctx.fillText(state, W/2, 650);
+  ctx.font = '700 44px Arial';
+  ctx.fillText(state, W/2, 440);
 
   // Top region line
-  ctx.fillStyle = '#c8cdd3'; ctx.font = '400 30px Arial';
-  ctx.fillText(`Led by ${topRegion}`, W/2, 710);
+  ctx.fillStyle = '#c8cdd3'; ctx.font = '400 26px Arial';
+  ctx.fillText(`Led by ${topRegion}`, W/2, 480);
 
-  // Sparkline (last up to 14 days)
-  if(history.length >= 2){
-    const padX = 140, top = 760, chartH = 130, chartW = W - padX*2;
-    const scores = history.map(p=>p.score);
-    const min = Math.min(...scores), max = Math.max(...scores);
-    const range = Math.max(1, max-min);
-    ctx.beginPath();
-    history.forEach((p,i)=>{
-      const x = padX + (i/(history.length-1))*chartW;
-      const y = top + chartH - ((p.score-min)/range)*chartH;
-      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  // FIX (share-card map): the on-page GLOBAL RISK MAP is one of ORACLE's most
+  // recognizable visuals, but the shareable card never included it — it was
+  // just a number and a sparkline. This draws the same region-colored world
+  // map directly onto the canvas using d3.geoPath's context() renderer
+  // (draws straight to Canvas 2D, no SVG/image conversion needed), reusing
+  // the exact same REGION_COUNTRY_IDS mapping and color scale as the live map.
+  const mapX = 70, mapY = 530, mapW = W - 140, mapH = 330;
+  try{
+    const world = await loadWorldAtlas();
+    const regionByName = {};
+    (currentData?.regions || []).forEach(r => { regionByName[r.name] = r; });
+    const idToRegion = {};
+    Object.entries(REGION_COUNTRY_IDS).forEach(([regionName, ids])=>{
+      const region = regionByName[regionName];
+      if(!region) return;
+      ids.forEach(id => { idToRegion[id] = region; });
     });
-    ctx.strokeStyle = stateColor; ctx.lineWidth = 5; ctx.lineJoin='round'; ctx.lineCap='round';
-    ctx.stroke();
-    const lastX = padX + chartW, lastY = top + chartH - ((history[history.length-1].score-min)/range)*chartH;
-    ctx.beginPath(); ctx.arc(lastX,lastY,8,0,Math.PI*2); ctx.fillStyle = stateColor; ctx.fill();
-    ctx.fillStyle = '#828b96'; ctx.font='400 20px Arial'; ctx.textAlign='left';
-    ctx.fillText(`${history[0].date}`, padX, top+chartH+34);
-    ctx.textAlign='right';
-    ctx.fillText('TODAY', padX+chartW, top+chartH+34);
+    const countries = topojson.feature(world, world.objects.countries).features;
+    const projection = d3.geoNaturalEarth1().fitSize([mapW, mapH], { type:'Sphere' });
+    const geoPath = d3.geoPath(projection, ctx);
+
+    ctx.save();
+    ctx.translate(mapX, mapY);
+    ctx.beginPath(); geoPath({ type:'Sphere' }); ctx.fillStyle = '#151b23'; ctx.fill();
+    countries.forEach(feature=>{
+      const matched = idToRegion[String(feature.id)];
+      ctx.beginPath();
+      geoPath(feature);
+      ctx.fillStyle = matched ? mapColorForScore(matched.score) : '#2c3540';
+      ctx.fill();
+      ctx.strokeStyle = '#0a0e13'; ctx.lineWidth = 0.5; ctx.stroke();
+    });
+    ctx.restore();
+  }catch(_){
+    // Map data unavailable — the card still works fine without it, just
+    // shows the score/state/sparkline as before.
+    ctx.fillStyle = '#565f6a'; ctx.font = '400 20px Arial'; ctx.textAlign = 'center';
+    ctx.fillText('(map unavailable)', W/2, mapY + mapH/2);
   }
+
+  // Legend row under the map
+  const legendY = mapY + mapH + 46;
+  const legendItems = [['STABLE',STATE_COLORS.STABLE],['WATCH',STATE_COLORS.WATCH],['HIGH',STATE_COLORS.HIGH],['CRITICAL',STATE_COLORS.CRITICAL]];
+  const legendGap = 210;
+  const legendStartX = W/2 - (legendGap*(legendItems.length-1))/2;
+  legendItems.forEach(([label,color],i)=>{
+    const x = legendStartX + i*legendGap;
+    ctx.fillStyle = color; ctx.fillRect(x-70, legendY-14, 18, 18);
+    ctx.fillStyle = '#9aa2ac'; ctx.font='400 18px Arial'; ctx.textAlign='left';
+    ctx.fillText(label, x-44, legendY+1);
+  });
 
   // Footer
   ctx.textAlign = 'center';
   ctx.fillStyle = '#6b7480'; ctx.font = '400 22px Arial';
-  ctx.fillText(`Updated ${fmtTime(currentData?.updatedAt)} · ${window.location.hostname}`, W/2, H-90);
+  ctx.fillText(`Updated ${fmtTime(currentData?.updatedAt)} · ${window.location.hostname}`, W/2, H-70);
   ctx.fillStyle = '#565f6a'; ctx.font = '400 18px Arial';
-  ctx.fillText('Experimental project — keyword-based heuristics, not a validated risk model.', W/2, H-56);
+  ctx.fillText('Experimental project — keyword-based heuristics, not a validated risk model.', W/2, H-38);
 
   return canvas;
 }
@@ -363,7 +392,7 @@ async function handleShareCard(){
   const btn = $('shareCardBtn');
   if(btn) { btn.disabled = true; btn.textContent = 'GENERATING…'; }
   try{
-    const canvas = drawShareCard();
+    const canvas = await drawShareCard();
     if(!canvas) return;
     canvas.toBlob((blob)=>{
       if(!blob){ if(btn){ btn.disabled=false; btn.textContent='📷 SHARE CARD FOR X'; } return; }
