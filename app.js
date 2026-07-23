@@ -992,7 +992,7 @@ function setup(){
   if(params.get('admin')) $('adminPanel')?.classList.add('open');
   $('whyBtn').addEventListener('click', ()=> $('scoreModal').classList.add('open'));
   $('shareCardBtn')?.addEventListener('click', handleShareCard);
-  $('mapContainer')?.addEventListener('click', openMapExpanded);
+  $('mapExpandHint')?.addEventListener('click', openMapExpanded);
   $('disclaimerToggle')?.addEventListener('click', ()=>{
     const detail = $('disclaimerDetail');
     const btn = $('disclaimerToggle');
