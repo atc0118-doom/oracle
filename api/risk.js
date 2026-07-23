@@ -378,10 +378,25 @@ function sourceName(domain=''){
 
 // FIX: removed unused/dead `countTerms` function that was never called anywhere.
 
+// FIX (matching gap): this used to require an EXACT word-boundary match —
+// the keyword 'strike' would match "strike" but NOT "strikes", 'missile'
+// would not match "missiles", 'tanker' would not match "tankers", etc. Since
+// real headlines are almost always plural ("Houthis claim strikes on Saudi
+// tankers"), a lot of genuinely-military headlines were silently scoring
+// zero on the Military category and falling through to whichever other
+// category happened to match something else in the same headline — which is
+// exactly how a Houthi-tanker-strike story ended up attributed mainly to the
+// Finance driver instead of Military. Now each term optionally matches a
+// trailing 's' or 'es'. Terms with a deliberate trailing space (like 'un ',
+// used to avoid matching "un-" prefixes) are left exact, since pluralizing
+// them doesn't make sense.
 function countOccurrences(text, terms){
   return terms.reduce((n,t)=>{
-    const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp('\\b' + escaped.replace(/\\s+/g,'\\s+') + '\\b', 'gi');
+    const hasTrailingSpace = /\s$/.test(t);
+    const trimmed = t.replace(/\s+$/,'');
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g,'\\s+');
+    const suffix = hasTrailingSpace ? '' : '(?:e?s)?';
+    const re = new RegExp('\\b' + escaped + suffix + '\\b', 'gi');
     return n + ((text.match(re) || []).length);
   }, 0);
 }
@@ -662,6 +677,13 @@ async function aiAssessment(analyzed, articles, sourceError=null){
 
   try{
     const selectedTop = analyzed.top || articles[0] || {};
+    // FIX (score scope): only send the AI the 5 drivers that actually feed
+    // the score. Previously the full drivers object (including Disaster and
+    // Health) was sent, so even with keyDrivers restricted by prompt
+    // instruction, the model could still reference Disaster/Health inside
+    // free-text fields like scoreReason or assessment, since it could see
+    // those values right there in the data block.
+    const scoringDrivers = Object.fromEntries(Object.entries(analyzed.drivers).filter(([k])=>!NON_SCORING_CATEGORIES.includes(k)));
     const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n');
     const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze ONLY the supplied public headlines and calculated signals. Prefer source-bound, non-causal intelligence wording.
 Return strict JSON only. No markdown.
@@ -673,7 +695,7 @@ Required keys:
 - scoreReason: 1 sentence explaining the score using drivers and public signals.
 - outlook24h: one of STABLE, WATCH, ESCALATING, DE-ESCALATING.
 - outlookText: 1 sentence explaining the 24h outlook without claiming certainty.
-- keyDrivers: array of 3 to 5 short driver labels.
+- keyDrivers: array of 3 to 5 short driver labels. Use ONLY the 5 geopolitical drivers that feed the score (Military, Diplomatic, Cyber, Logistics, Finance). Do NOT include Disaster or Health — those are tracked separately and intentionally excluded from this score, so listing them here would misleadingly imply they moved it.
 - watchNext: array of 3 to 5 short items ORACLE should monitor next.
 - sourceConfidence: object with availableSources array, limitedSources array, note string.
 - verifiedSources: array of source names actually present in supplied headlines.
@@ -710,7 +732,7 @@ X post rules:
 - hashtags must always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Beyond those five, add whatever short, real, on-topic tags actually match the supplied headlines — do not limit yourself to a fixed example list. If the headlines involve Sudan, Myanmar, DRC, Haiti, Venezuela, a disease outbreak, or any other topic not in a typical example set, tag it plainly (e.g. Sudan, Myanmar, PublicHealth, Pandemic) rather than omitting it or forcing it into an unrelated existing tag.
 
 Global score: ${analyzed.final}
-Drivers: ${JSON.stringify(analyzed.drivers)}
+Drivers: ${JSON.stringify(scoringDrivers)}
 Regions: ${JSON.stringify(analyzed.regions)}
 Risk contributors: ${JSON.stringify(analyzed.contributors || [])}
 Calculation: raw=${round1(analyzed.raw)}, stability=${round1(analyzed.adjustment)}, duplicateNoise=${round1(analyzed.duplicateReduction)}, globalNormalization=${round1(analyzed.globalNormalization)}, final=${analyzed.final}
@@ -910,9 +932,16 @@ function alignedOutlookText(label, aiText='', topRegion='Global', corpus=''){
   return text;
 }
 
+// FIX (score scope): even with the prompt updated, the AI can still ignore
+// instructions occasionally — this strips any Disaster/Health line that
+// slips through, so KEY DRIVERS can never contradict the "5 geopolitical
+// drivers only" note shown right above it in WHY SCORE?.
+function stripNonScoringCategories(lines){
+  return (lines || []).filter(line => !NON_SCORING_CATEGORIES.some(cat => new RegExp(`^${cat}\\b`, 'i').test(String(line))));
+}
 function safeList(list, topRegion, analyzed){
   const arr = Array.isArray(list) ? list : [];
-  const cleaned = arr.map(x=>clean(String(x))).filter(Boolean).slice(0,5);
+  const cleaned = stripNonScoringCategories(arr.map(x=>clean(String(x))).filter(Boolean)).slice(0,5);
   return cleaned.length ? cleaned : fallbackDrivers(topRegion, analyzed);
 }
 function driverTrendLabel(value){
@@ -922,7 +951,7 @@ function driverTrendLabel(value){
 }
 function fallbackDrivers(topRegion, analyzed){
   const d = analyzed.drivers || {};
-  const ordered = Object.entries(d).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const ordered = Object.entries(d).filter(([k])=>!NON_SCORING_CATEGORIES.includes(k)).sort((a,b)=>b[1]-a[1]).slice(0,5);
   return ordered.map(([k,v],i)=> i===0
     ? `${k}: primary ${driverTrendLabel(v)} signal (${Math.round(v)})`
     : `${k}: ${driverTrendLabel(v)} signal (${Math.round(v)})`
@@ -1006,7 +1035,7 @@ function buildFacts(articles, llm, meta){
   facts.push(`${sourceText}: public reporting is being monitored across ${topic}.`);
 
   if(count > 0){
-    facts.push(`ORACLE reviewed ${count} recent public signals and grouped them by military, diplomatic, cyber, logistics, finance, and disaster categories.`);
+    facts.push(`ORACLE reviewed ${count} recent public signals and grouped them by military, diplomatic, cyber, logistics, finance, disaster, and health categories.`);
   } else {
     facts.push('Live public source volume is limited; ORACLE is using conservative baseline monitoring.');
   }
@@ -1274,7 +1303,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
       : (aiOk ? safeIntelText(llm.assessment, `ORACLE assesses ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`, corpus) : `ORACLE assesses ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`),
     scoreReason: isBaseline
       ? 'This score is derived from baseline placeholder text, not live signals, and should not be treated as a real risk measurement.'
-      : (aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`, corpus) : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`),
+      : (aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomatic, cyber, logistics, and finance categories, adjusted for limited global synchronization.`, corpus) : `Score reflects weighted public signals across military, diplomatic, cyber, logistics, and finance categories, adjusted for limited global synchronization.`),
     xPost: isBaseline ? null : (aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null),
     xPostGlobal: isBaseline ? null : (aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null),
     xPostJapanese: isBaseline ? null : (aiOk ? safeIntelText(llm.xPostJapanese, '', corpus) : null),
