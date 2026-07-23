@@ -48,7 +48,7 @@ const CATEGORY_KEYWORDS = {
 // weighted into the score itself. Their weight here is 0 on purpose.
 const WEIGHTS = { Military:.38, Diplomatic:.22, Cyber:.16, Logistics:.16, Finance:.08, Disaster:0, Health:0 };
 const NON_SCORING_CATEGORIES = ['Disaster','Health'];
-const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null });
+const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null, llm:null, llmTs:0 });
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6500;
 
@@ -139,7 +139,28 @@ export default async function handler(req, res){
     const { articles, sourceError, degraded, sourceReport, isBaseline } = await loadArticles();
     const analyzed = analyzeArticles(articles);
     analyzed.isBaseline = isBaseline; // FIX: propagate baseline flag through the whole pipeline
-    const llm = await aiAssessment(analyzed, articles, sourceError);
+
+    // FIX (cost): aiAssessment() used to run on every single request, even
+    // though the underlying articles are only re-fetched every CACHE_TTL_MS
+    // (10 min) — so 10 people loading the page in the same 10-minute window
+    // meant 10 near-identical OpenAI calls billed for the same headlines.
+    // The AI result is now cached alongside the article cache (keyed to the
+    // same ORACLE_CACHE.ts) and only regenerated when the articles actually
+    // refresh. Baseline mode also now skips the OpenAI call entirely: every
+    // field buildPayload derives from `llm` is already overridden with fixed
+    // baseline text when isBaseline is true (see buildPayload below), so
+    // calling OpenAI there was pure wasted cost with no effect on the output.
+    let llm;
+    if(isBaseline){
+      llm = null;
+    }else if(ORACLE_CACHE.llm && ORACLE_CACHE.llmTs === ORACLE_CACHE.ts){
+      llm = ORACLE_CACHE.llm;
+    }else{
+      llm = await aiAssessment(analyzed, articles, sourceError);
+      ORACLE_CACHE.llm = llm;
+      ORACLE_CACHE.llmTs = ORACLE_CACHE.ts;
+    }
+
     const payload = buildPayload(analyzed, articles, llm, { sourceError, degraded, sourceReport, isBaseline });
 
     // Server-side history (optional — no-ops cleanly if Redis isn't configured).
