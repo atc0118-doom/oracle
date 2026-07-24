@@ -992,6 +992,23 @@ function generatePost(lang='en'){
   // already included (e.g. #ORACLE) would show up twice in the final post.
   // Now we drop any tag from the appended list that's already present
   // (case-insensitive) in the base post text.
+  // FIX (double hashtag block): even with the prompt telling the AI not to
+  // embed hashtags in xPostGlobal/xPostJapanese, it sometimes still ends the
+  // text with its own hashtag line — and since that line rarely matches the
+  // separately-generated `hashtags` field tag-for-tag, the previous
+  // dedupeTagsAgainstText check didn't catch it, producing two separate
+  // hashtag blocks in the final post (one embedded, one appended). This
+  // strips any hashtag-only trailing line(s) from the AI text first, so
+  // there's only ever one hashtag block — the appended one — regardless of
+  // what the model did.
+  const stripTrailingHashtagLines = (text) => {
+    // Strips a trailing run of "#tag #tag #tag" tokens from the very end of
+    // the text, whether they sit on their own line or are appended right
+    // after the last sentence on the same line (the case that was actually
+    // happening: "...Houthi actions. #ORACLE #WorldRiskIndex ..." with no
+    // line break before the hashtags at all).
+    return String(text || '').replace(/(?:\s*#\S+)+\s*$/, '').trim();
+  };
   const dedupeTagsAgainstText = (text, tagList) => {
     const lower = String(text || '').toLowerCase();
     return tagList.filter(tag => !lower.includes(tag.toLowerCase()));
@@ -999,7 +1016,7 @@ function generatePost(lang='en'){
 
   if(lang === 'ja'){
     if(d.xPostJapanese && typeof d.xPostJapanese === 'string'){
-      const base = d.xPostJapanese.trim();
+      const base = stripTrailingHashtagLines(d.xPostJapanese.trim());
       const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
       return `${base}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
     }
@@ -1011,7 +1028,7 @@ function generatePost(lang='en'){
 
   const aiPost = d.xPostGlobal || d.xPost;
   if(aiPost && typeof aiPost === 'string'){
-    const base = aiPost.trim();
+    const base = stripTrailingHashtagLines(aiPost.trim());
     const tags = dedupeTagsAgainstText(base, dynamicTags(d, lang)).join(' ');
     return `${base}\n\nhttps://oracle-rho-flax.vercel.app\n\n${tags}`;
   }
