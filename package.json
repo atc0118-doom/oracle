@@ -1,9 +1,6 @@
 {
-  "name": "oracle-japan",
-  "version": "0.1.6",
+  "name": "oracle-world-risk-intelligence",
+  "version": "6.1.0",
   "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test tests/"
-  }
+  "type": "module"
 }
