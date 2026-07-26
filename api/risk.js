@@ -48,6 +48,26 @@ const CATEGORY_KEYWORDS = {
 // weighted into the score itself. Their weight here is 0 on purpose.
 const WEIGHTS = { Military:.38, Diplomatic:.22, Cyber:.16, Logistics:.16, Finance:.08, Disaster:0, Health:0 };
 const NON_SCORING_CATEGORIES = ['Disaster','Health'];
+
+// FIX (false positive): satirical/joke headlines that merely contain a
+// scoring keyword (e.g. "Iran War Participation Trophy" mocking a political
+// figure) were being counted as real Military/regional signals purely
+// because the word "war" appears in them. This list flags known satire
+// markers so those headlines can be excluded from scoring entirely instead
+// of quietly inflating the index.
+export const SATIRE_INDICATOR_TERMS = [
+  'participation trophy',
+  'mocks trump',
+  'satire',
+  'parody',
+  'the onion',
+  'babylon bee'
+];
+
+function isSatireHeadline(title=''){
+  const t = String(title || '').toLowerCase();
+  return SATIRE_INDICATOR_TERMS.some(term => t.includes(term));
+}
 const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null, llm:null, llmTs:0 });
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6500;
@@ -341,7 +361,7 @@ function decodeXml(s=''){
   return String(s).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
 }
 
-function dedupeArticles(articles){
+export function dedupeArticles(articles){
   const seen = new Set();
   const out = [];
   for(const a of articles){
@@ -393,7 +413,7 @@ function sourceName(domain=''){
 // trailing 's' or 'es'. Terms with a deliberate trailing space (like 'un ',
 // used to avoid matching "un-" prefixes) are left exact, since pluralizing
 // them doesn't make sense.
-function countOccurrences(text, terms){
+export function countOccurrences(text, terms){
   return terms.reduce((n,t)=>{
     const hasTrailingSpace = /\s$/.test(t);
     const trimmed = t.replace(/\s+$/,'');
@@ -429,7 +449,7 @@ function freshnessWeight(article){
 }
 
 function analyzeArticles(articles){
-  const list = Array.isArray(articles) ? articles : [];
+  const list = (Array.isArray(articles) ? articles : []).filter(a => !isSatireHeadline(a.title));
   const total = Math.max(list.length, 1);
   const driverRaw = Object.fromEntries(Object.keys(CATEGORY_KEYWORDS).map(k=>[k,0]));
   const driverSources = Object.fromEntries(Object.keys(CATEGORY_KEYWORDS).map(k=>[k,new Set()]));
@@ -630,7 +650,7 @@ function analyzeArticles(articles){
 // explanations for every branch that actually fired, so the UI can show the
 // real rule that was applied instead of a generic fixed sentence.
 
-function duplicateNoiseReduction(articles=[]){
+export function duplicateNoiseReduction(articles=[]){
   const titles = articles.map(a=>clean(a.title || '').toLowerCase()).filter(Boolean);
   if(titles.length < 8) return { value:0, reasons:['Fewer than 8 signals: duplicate-noise check skipped.'] };
   const stems = titles.map(t=>t.replace(/[^a-z0-9]+/g,' ').split(' ').slice(0,8).join(' '));
@@ -642,19 +662,26 @@ function duplicateNoiseReduction(articles=[]){
   return { value:0, reasons:[`${pct}% of signals have distinct headlines: no duplication penalty.`] };
 }
 
-function globalSynchronizationAdjustment(contributors=[], drivers={}){
+export function globalSynchronizationAdjustment(contributors=[], drivers={}){
   const topShare = contributors[0]?.share || 0;
   const topName = contributors[0]?.name || 'the top region';
+  // FIX (production bug): a severe, single-region war (Military evidence
+  // near-max) was being scored LOWER than a milder, multi-region situation
+  // purely for being concentrated in one place. A severe single-region
+  // conflict is not less risky just because it hasn't spread — so the
+  // concentration penalty is skipped once Military pressure is itself severe.
+  const militarySevere = (drivers.Military||0) >= 80;
   let adj = 0;
   const reasons = [];
-  if(topShare > 58){ adj -= 3; reasons.push(`${topName} accounts for ${topShare}% of signals (>58%): -3, risk is regionally concentrated rather than globally synchronized.`); }
+  if(topShare > 58 && !militarySevere){ adj -= 3; reasons.push(`${topName} accounts for ${topShare}% of signals (>58%): -3, risk is regionally concentrated rather than globally synchronized.`); }
+  else if(topShare > 58 && militarySevere){ reasons.push(`${topName} accounts for ${topShare}% of signals (>58%) but Military pressure is severe (${Math.round(drivers.Military||0)} ≥80): no concentration discount — a severe single-region conflict should not score lower than a milder multi-region one.`); }
   if(topShare < 38 && (drivers.Military||0) > 50){ adj += 2; reasons.push(`No single region dominates (top region ${topShare}% <38%) while Military pressure is high (${Math.round(drivers.Military||0)}): +2, pressure appears spread across regions.`); }
   if((drivers.Cyber||0) > 45 && (drivers.Logistics||0) > 45){ adj += 2; reasons.push(`Cyber (${Math.round(drivers.Cyber||0)}) and Logistics (${Math.round(drivers.Logistics||0)}) are both elevated (>45): +2, possible cross-domain spillover.`); }
   if(!reasons.length) reasons.push('No global-synchronization conditions were met: no adjustment.');
   return { value:adj, reasons };
 }
 
-function stabilityAdjustment(drivers, regions, total, contributors=[]){
+export function stabilityAdjustment(drivers, regions, total, contributors=[]){
   let adj = -3;
   const reasons = ['Baseline stability adjustment: -3 (applied every cycle to avoid over-reacting to normal daily signal volume).'];
   if((drivers.Military||0) > 58 && (drivers.Diplomatic||0) > 32){ adj += 2; reasons.push(`Military (${Math.round(drivers.Military||0)}) and Diplomatic (${Math.round(drivers.Diplomatic||0)}) are both elevated: +2, active engagement rather than silent escalation.`); }
@@ -903,7 +930,7 @@ function safeHashtags(tags){
   return [...new Set([...base, ...allowed])].slice(0,14);
 }
 
-function normalizeOutlook(v=''){
+export function normalizeOutlook(v=''){
   const s = String(v || '').toUpperCase().replace(/[^A-Z-]/g,'');
   if(['STABLE','WATCH','ESCALATING','DE-ESCALATING'].includes(s)) return s;
   return 'STABLE';
@@ -972,7 +999,7 @@ function fallbackWatchNext(topRegion){
 // FIX: baseline placeholder articles (source === 'ORACLE Baseline'/'ORACLE System')
 // are now excluded from the "verified sources" list so the UI can never claim
 // e.g. "Reuters, AP, ..." verified sources when the underlying content was synthetic.
-function getVerifiedSources(articles){
+export function getVerifiedSources(articles){
   const real = (articles||[]).filter(a => a.sourceType !== 'baseline-placeholder');
   const sources = [...new Set(real.map(a=>a.source).filter(Boolean))];
   const baseline = ['Reuters','AP','BBC','NHK','Al Jazeera'];
@@ -1362,9 +1389,9 @@ function sourceHealthScore(articles, meta){
   return clamp(Math.round(55 + (active/total)*28 + volume*13), 55, 98);
 }
 
-function stateFromScore(s){ if(s>=70)return'CRITICAL'; if(s>=50)return'HIGH'; if(s>=30)return'WATCH'; return'STABLE'; }
-function clamp(n,min,max){ return Math.max(min, Math.min(max, Number(n)||0)); }
-function round1(n){ return Math.round(Number(n||0)*10)/10; }
+export function stateFromScore(s){ if(s>=70)return'CRITICAL'; if(s>=50)return'HIGH'; if(s>=30)return'WATCH'; return'STABLE'; }
+export function clamp(n,min,max){ return Math.max(min, Math.min(max, Number(n)||0)); }
+export function round1(n){ return Math.round(Number(n||0)*10)/10; }
 
 function fallbackPayload(error){
   // FIX: this hard-fallback path (thrown exception) is now also explicitly
