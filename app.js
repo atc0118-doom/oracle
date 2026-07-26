@@ -615,6 +615,17 @@ function render(data){
   $('aiMode').textContent = currentData.aiMode || (currentData.aiUsed ? 'LLM ASSISTED' : 'RULE BASED');
   const statusText = currentData.dataStatus || (currentData.mode === 'live' ? 'LIVE SOURCES' : currentData.mode === 'degraded' ? 'CACHED / DEGRADED' : 'BASELINE');
   if($('dataStatus')) $('dataStatus').textContent = statusText;
+  // FIX: the topbar badge used to be static markup ("LIVE" with a permanent
+  // green pulsing dot) that never changed no matter what the backend
+  // actually reported — so it kept claiming "LIVE" even in degraded,
+  // baseline, or fallback mode. It now reflects the real mode/isBaseline
+  // state from the payload.
+  const liveBadge = $('liveBadge');
+  if(liveBadge){
+    liveBadge.classList.remove('is-live','is-degraded','is-baseline');
+    const statusClass = currentData.isBaseline ? 'is-baseline' : (currentData.mode === 'degraded' ? 'is-degraded' : 'is-live');
+    liveBadge.classList.add(statusClass);
+  }
   $('sourceHealth').textContent = `${Math.round(currentData.sourceHealth || 90)}%`;
   // FIX (honesty): the headline used to hardcode "60 SEC" (the browser's own
   // auto-refresh timer) right above a footnote admitting the real server

@@ -85,3 +85,7 @@
 
 /* ORACLE map country-info label (reliable tap feedback, replaces unreliable SVG title hover-tooltip) */
 .map-country-info{margin:12px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.02);color:#cdd2d8;font-size:12px;line-height:1.5;min-height:1.4em}
+
+/* ORACLE live/degraded/baseline topbar badge (reflects actual data status instead of a hardcoded "LIVE") */
+.live.is-degraded span{background:var(--yellow);box-shadow:0 0 16px rgba(201,171,69,.8)}
+.live.is-baseline span{background:var(--red);box-shadow:0 0 16px rgba(229,72,77,.8);animation:none;opacity:1;transform:none}
