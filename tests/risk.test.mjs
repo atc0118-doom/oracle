@@ -8,8 +8,8 @@
 // bugs in this project before (see git history / chat history):
 //   - countOccurrences: the "attack" vs "attacks" word-boundary bug that
 //     caused real military headlines to fall through to a "General" driver.
-//   - the satire-detection filter: the "Iran War Participation Trophy"
-//     headline getting counted as a Military-driver signal.
+//   - the satire-detection filter: obvious satire-outlet headlines getting
+//     counted as real signals instead of screened out before scoring.
 //   - the concentration-penalty design fix: a severe, single-region conflict
 //     shouldn't score lower than a milder multi-region one.
 // This is not exhaustive coverage of risk.js — it targets the specific
@@ -47,8 +47,12 @@ test('countOccurrences does not match unrelated substrings', () => {
   assert.equal(countOccurrences('the warring factions met for talks', ['war']), 0);
 });
 
-test('SATIRE_INDICATOR_TERMS flags the known false-positive headline', () => {
-  const title = "'iran war participation trophy' on national mall mocks trump";
+test('SATIRE_INDICATOR_TERMS flags an obvious satire-outlet headline', () => {
+  // FIX (neutrality): previously tested a headline built around a named
+  // political figure ("...mocks trump"), mirroring a filter term that was
+  // itself reverse-engineered from one example. The filter and this test
+  // now stay generic — genre words and real satire-outlet names only.
+  const title = "the onion: local man declares himself supreme ruler of his backyard";
   const isSatire = SATIRE_INDICATOR_TERMS.some(t => title.includes(t));
   assert.equal(isSatire, true);
 });
