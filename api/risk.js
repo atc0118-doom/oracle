@@ -55,9 +55,16 @@ const NON_SCORING_CATEGORIES = ['Disaster','Health'];
 // because the word "war" appears in them. This list flags known satire
 // markers so those headlines can be excluded from scoring entirely instead
 // of quietly inflating the index.
+// FIX (neutrality): this list previously included 'participation trophy' and
+// 'mocks trump' — both reverse-engineered from one specific test headline
+// rather than a general principle, and 'mocks trump' names a real political
+// figure, which is inconsistent with this project's otherwise careful
+// political neutrality (see reliabilityRewrite/safeIntelText below). Keep
+// this list generic: real satire-outlet names and genre words only, nothing
+// that references a specific person or party. Note this filter runs
+// silently — if it ever needs to explain itself in the UI, that's a bigger
+// change; for now it only screens out obvious junk before scoring.
 export const SATIRE_INDICATOR_TERMS = [
-  'participation trophy',
-  'mocks trump',
   'satire',
   'parody',
   'the onion',
