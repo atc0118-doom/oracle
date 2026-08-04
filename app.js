@@ -181,7 +181,7 @@ function renderWatchFollowup(previousEntry, currentData){
     const keywords = extractKeywords(item);
     const hit = keywords.length && keywords.some(k=>todayText.includes(k));
     const badge = hit
-      ? '<span class="followup-badge followup-hit">STILL ON RADAR</span>'
+      ? '<span class="followup-badge followup-hit">STILL ACTIVE</span>'
       : '<span class="followup-badge followup-miss">NOT MENTIONED TODAY</span>';
     return `<li>${escapeHtml(item)} ${badge}</li>`;
   }).join('') + `<li class="followup-date">From ${previousEntry.date}'s watch list</li>`;
