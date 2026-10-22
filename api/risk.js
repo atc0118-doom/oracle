@@ -11,17 +11,11 @@
 
 const REGION_KEYWORDS = [
   { name: 'Ukraine', terms: ['ukraine','kyiv','kiev','donetsk','kharkiv','zaporizhzhia','russia','crimea'] },
-  // FIX: removed the bare word 'strait' from Taiwan Strait matching. A generic
-  // term like "strait" also appears in unrelated phrases such as "Strait of
-  // Hormuz" (Middle East), which was causing those headlines to be mislabeled
-  // as Taiwan Strait signals. Now only Taiwan-specific strait phrasing counts.
-  { name: 'Taiwan Strait', terms: ['taiwan','taipei','taiwan strait','strait of taiwan','formosa strait','pla','china military','chinese military'] },
-  { name: 'Middle East', terms: ['iran','israel','gaza','hamas','hezbollah','red sea','houthi','lebanon','syria','strait of hormuz','hormuz'] },
-  // FIX: removed the bare word 'maritime' from South China Sea matching for the
-  // same reason — it's a generic term that also applies to Middle East/Hormuz
-  // shipping stories and would mislabel them.
-  { name: 'South China Sea', terms: ['south china sea','philippines','spratly','scarborough','west philippine sea'] },
+  { name: 'Taiwan Strait', terms: ['taiwan','taipei','strait','pla','china military','chinese military'] },
+  { name: 'Middle East', terms: ['iran','israel','gaza','hamas','hezbollah','red sea','houthi','lebanon','syria'] },
+  { name: 'South China Sea', terms: ['south china sea','philippines','spratly','scarborough','maritime'] },
   { name: 'Korea', terms: ['north korea','south korea','pyongyang','seoul'] },
+  { name: 'Europe', terms: ['france','french government','macron','french president','eu summit','european union','brussels','berlin','germany','french parliament','national assembly','far-right france','far right france'] },
   { name: 'Global Cyber', terms: ['cyber','hack','malware','ransomware','data breach','ddos'] }
 ];
 
@@ -31,132 +25,13 @@ const CATEGORY_KEYWORDS = {
   Cyber: ['cyber','hack','malware','ransomware','data breach','ddos','spyware','phishing'],
   Logistics: ['shipping','port','tanker','supply chain','freight','container','canal','sea lane','logistics','vessel'],
   Finance: ['market','oil','gas','inflation','stocks','bond','currency','rate','bank','gold','dollar'],
-  Disaster: ['earthquake','flood','wildfire','volcano','storm','hurricane','typhoon','tsunami','drought'],
-  // FIX (coverage gap): there was previously NO keyword category for disease
-  // outbreaks at all — an active pandemic or epidemic simply had no bucket to
-  // be counted in, regardless of how much it was in the news.
-  Health: ['outbreak','epidemic','pandemic','disease outbreak','who ','world health organization','cdc','infectious disease','vaccine','quarantine']
+  Disaster: ['earthquake','flood','wildfire','volcano','storm','hurricane','typhoon','tsunami','drought']
 };
 
-// FIX (score scope): Disaster and Health used to be weighted into the same
-// single ORACLE INDEX as Military/Diplomatic/Cyber/Logistics/Finance. That
-// meant a major earthquake or disease outbreak — with zero geopolitical
-// tension involved — could move the "world risk" number on its own, even
-// though every other part of the UI (regions, map, top event) frames this as
-// a geopolitical-tension index. Disaster/Health are still tracked and shown
-// (see the separate DISASTER & HEALTH MONITORING card), just no longer
-// weighted into the score itself. Their weight here is 0 on purpose.
-const WEIGHTS = { Military:.38, Diplomatic:.22, Cyber:.16, Logistics:.16, Finance:.08, Disaster:0, Health:0 };
-const NON_SCORING_CATEGORIES = ['Disaster','Health'];
-
-// FIX (false positive): satirical/joke headlines that merely contain a
-// scoring keyword (e.g. "Iran War Participation Trophy" mocking a political
-// figure) were being counted as real Military/regional signals purely
-// because the word "war" appears in them. This list flags known satire
-// markers so those headlines can be excluded from scoring entirely instead
-// of quietly inflating the index.
-// FIX (neutrality): this list previously included 'participation trophy' and
-// 'mocks trump' — both reverse-engineered from one specific test headline
-// rather than a general principle, and 'mocks trump' names a real political
-// figure, which is inconsistent with this project's otherwise careful
-// political neutrality (see reliabilityRewrite/safeIntelText below). Keep
-// this list generic: real satire-outlet names and genre words only, nothing
-// that references a specific person or party. Note this filter runs
-// silently — if it ever needs to explain itself in the UI, that's a bigger
-// change; for now it only screens out obvious junk before scoring.
-export const SATIRE_INDICATOR_TERMS = [
-  'satire',
-  'parody',
-  'the onion',
-  'babylon bee'
-];
-
-function isSatireHeadline(title=''){
-  const t = String(title || '').toLowerCase();
-  return SATIRE_INDICATOR_TERMS.some(term => t.includes(term));
-}
-const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null, llm:null, llmTs:0 });
+const WEIGHTS = { Military:.35, Diplomatic:.20, Cyber:.15, Logistics:.15, Finance:.10, Disaster:.05 };
+const ORACLE_CACHE = globalThis.__ORACLE_CACHE__ || (globalThis.__ORACLE_CACHE__ = { articles:null, ts:0, lastError:null, sourceReport:null });
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6500;
-
-// ---------------------------------------------------------------------------
-// FIX (persistence, priority #4 from the review backlog): the "24H delta"
-// and "yesterday's watch-next follow-up" features were entirely client-side
-// (browser localStorage), so switching devices or clearing site data reset
-// them to zero. This adds an OPTIONAL durable log backed by Upstash Redis
-// (via Vercel Marketplace's Redis integration, which injects REST
-// credentials as env vars). If no credentials are configured, every function
-// here quietly no-ops and the payload simply omits the server-side fields —
-// the frontend already has a client-side fallback for both features, so
-// nothing breaks for people who haven't set up storage yet.
-// ---------------------------------------------------------------------------
-const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || null;
-const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || null;
-const REDIS_LOG_KEY = 'oracle:score_log';
-const REDIS_LOG_MAX_AGE_MS = 9 * 24 * 60 * 60 * 1000; // keep 9 days of points server-side
-
-async function redisCommand(command){
-  if(!REDIS_URL || !REDIS_TOKEN) return null;
-  try{
-    const r = await fetchWithTimeout(REDIS_URL, {
-      method:'POST',
-      headers:{ authorization:`Bearer ${REDIS_TOKEN}`, 'content-type':'application/json' },
-      body: JSON.stringify(command),
-      timeout: 4000
-    });
-    if(!r.ok) return null;
-    const j = await r.json();
-    return j?.result ?? null;
-  }catch(_){
-    return null; // storage being unreachable should never break the risk endpoint
-  }
-}
-
-async function logScoreToRedis({ score, state, topRegion, watchNext }){
-  if(!REDIS_URL || !REDIS_TOKEN) return;
-  const now = Date.now();
-  const member = JSON.stringify({ ts:now, score, state, topRegion, watchNext: (watchNext||[]).slice(0,5) });
-  await redisCommand(['ZADD', REDIS_LOG_KEY, now, member]);
-  // Trim old points opportunistically so the sorted set doesn't grow forever.
-  await redisCommand(['ZREMRANGEBYSCORE', REDIS_LOG_KEY, 0, now - REDIS_LOG_MAX_AGE_MS]);
-}
-
-function parseRedisLogEntries(raw){
-  if(!Array.isArray(raw)) return [];
-  return raw.map(s=>{ try{ return JSON.parse(s); }catch(_){ return null; } }).filter(Boolean);
-}
-
-async function getServerDelta24h(){
-  if(!REDIS_URL || !REDIS_TOKEN) return { available:false };
-  const now = Date.now();
-  const windowMin = now - 30*60*60*1000;
-  const windowMax = now - 20*60*60*1000;
-  const raw = await redisCommand(['ZRANGEBYSCORE', REDIS_LOG_KEY, windowMin, windowMax]);
-  const entries = parseRedisLogEntries(raw);
-  if(!entries.length) return { available:false };
-  const target = now - 24*60*60*1000;
-  const closest = entries.reduce((best,e)=> Math.abs(e.ts-target) < Math.abs(best.ts-target) ? e : best);
-  return { available:true, refScore: closest.score, refTs: closest.ts };
-}
-
-async function getServerPreviousDay(){
-  if(!REDIS_URL || !REDIS_TOKEN) return null;
-  const now = Date.now();
-  const raw = await redisCommand(['ZRANGEBYSCORE', REDIS_LOG_KEY, now - REDIS_LOG_MAX_AGE_MS, now]);
-  const entries = parseRedisLogEntries(raw);
-  if(!entries.length) return null;
-  const todayJst = jstDateStamp(now);
-  // Most recent entry that falls on an earlier JST calendar day than today.
-  const priorDayEntries = entries.filter(e => jstDateStamp(e.ts) !== todayJst);
-  if(!priorDayEntries.length) return null;
-  const latest = priorDayEntries.reduce((best,e)=> e.ts > best.ts ? e : best);
-  return { date: jstDateStamp(latest.ts), score: latest.score, state: latest.state, topRegion: latest.topRegion, watchNext: latest.watchNext || [] };
-}
-
-function jstDateStamp(ts){
-  const d = new Date(new Date(ts).toLocaleString('en-US', { timeZone:'Asia/Tokyo' }));
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
 
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -166,46 +41,8 @@ export default async function handler(req, res){
     const { articles, sourceError, degraded, sourceReport, isBaseline } = await loadArticles();
     const analyzed = analyzeArticles(articles);
     analyzed.isBaseline = isBaseline; // FIX: propagate baseline flag through the whole pipeline
-
-    // FIX (cost): aiAssessment() used to run on every single request, even
-    // though the underlying articles are only re-fetched every CACHE_TTL_MS
-    // (10 min) — so 10 people loading the page in the same 10-minute window
-    // meant 10 near-identical OpenAI calls billed for the same headlines.
-    // The AI result is now cached alongside the article cache (keyed to the
-    // same ORACLE_CACHE.ts) and only regenerated when the articles actually
-    // refresh. Baseline mode also now skips the OpenAI call entirely: every
-    // field buildPayload derives from `llm` is already overridden with fixed
-    // baseline text when isBaseline is true (see buildPayload below), so
-    // calling OpenAI there was pure wasted cost with no effect on the output.
-    let llm;
-    if(isBaseline){
-      llm = null;
-      console.log('[oracle:ai-cache] SKIPPED (baseline mode — no OpenAI call made)');
-    }else if(ORACLE_CACHE.llm && ORACLE_CACHE.llmTs === ORACLE_CACHE.ts){
-      llm = ORACLE_CACHE.llm;
-      console.log(`[oracle:ai-cache] HIT — reused cached AI result (article batch ts=${ORACLE_CACHE.ts})`);
-    }else{
-      console.log(`[oracle:ai-cache] MISS — calling OpenAI now (article batch ts=${ORACLE_CACHE.ts})`);
-      llm = await aiAssessment(analyzed, articles, sourceError);
-      ORACLE_CACHE.llm = llm;
-      ORACLE_CACHE.llmTs = ORACLE_CACHE.ts;
-    }
-
+    const llm = await aiAssessment(analyzed, articles, sourceError);
     const payload = buildPayload(analyzed, articles, llm, { sourceError, degraded, sourceReport, isBaseline });
-
-    // Server-side history (optional — no-ops cleanly if Redis isn't configured).
-    const [serverDelta24h, serverPreviousDay] = await Promise.all([
-      getServerDelta24h(),
-      getServerPreviousDay()
-    ]);
-    payload.serverDelta24h = serverDelta24h;
-    payload.serverPreviousDay = serverPreviousDay;
-    if(!isBaseline){
-      // Don't log baseline/placeholder scores into real history — they'd
-      // pollute the 24H delta and next-day follow-up with fabricated data.
-      await logScoreToRedis({ score: payload.score, state: payload.state, topRegion: analyzed.regions[0]?.name || 'Global', watchNext: payload.watchNext });
-    }
-
     res.status(200).json(payload);
   }catch(error){
     res.status(200).json(fallbackPayload(error?.message || 'unknown'));
@@ -274,14 +111,7 @@ async function fetchWithTimeout(url, options={}){
 }
 
 async function fetchGdelt(){
-  // FIX (coverage gap): this query used to only include the 6 fixed regions
-  // ORACLE scores + generic conflict/disaster terms. Real conflicts and
-  // outbreaks outside that fixed list (Sudan, Myanmar, DR Congo, Haiti,
-  // Venezuela, a disease outbreak, etc.) had no keyword here at all, so they
-  // were invisible from the fetch stage onward — no amount of scoring logic
-  // downstream could surface them. This doesn't make ORACLE comprehensive
-  // (a fixed keyword list never can be), but it closes the most obvious gaps.
-  const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR outbreak OR epidemic OR pandemic OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China OR Sudan OR Myanmar OR "DR Congo" OR Haiti OR Venezuela OR Sahel)');
+  const query = encodeURIComponent('(military OR conflict OR missile OR drone OR cyber OR earthquake OR logistics OR shipping OR sanctions OR Taiwan OR Ukraine OR Iran OR Israel OR NATO OR Russia OR China OR France OR "European Union" OR Macron OR Germany)');
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=artlist&format=json&maxrecords=45&sort=hybridrel&timespan=24h`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('gdelt ' + r.status);
@@ -298,7 +128,7 @@ async function fetchGdelt(){
 }
 
 async function fetchGoogleNews(){
-  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China OR Sudan OR Myanmar OR "DR Congo" OR Haiti OR Venezuela OR outbreak OR epidemic OR pandemic) when:1d');
+  const q = encodeURIComponent('(Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR NATO OR Russia OR China OR France OR "European Union" OR Macron OR Germany) when:1d');
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('google_news ' + r.status);
@@ -309,7 +139,7 @@ async function fetchGoogleNews(){
 async function fetchGuardian(){
   const key = process.env.GUARDIAN_API_KEY;
   if(!key) return [];
-  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China OR Sudan OR Myanmar OR "DR Congo" OR Haiti OR Venezuela OR outbreak OR epidemic OR pandemic');
+  const q = encodeURIComponent('Ukraine OR Taiwan OR Iran OR Israel OR cyber OR earthquake OR shipping OR Russia OR China');
   const url = `https://content.guardianapis.com/search?q=${q}&section=world|technology|business|environment&show-fields=trailText&order-by=newest&page-size=20&api-key=${key}`;
   const r = await fetchWithTimeout(url, { headers:{ 'user-agent':'ORACLE World Risk Intelligence/9.0' } });
   if(!r.ok) throw new Error('guardian ' + r.status);
@@ -368,7 +198,7 @@ function decodeXml(s=''){
   return String(s).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
 }
 
-export function dedupeArticles(articles){
+function dedupeArticles(articles){
   const seen = new Set();
   const out = [];
   for(const a of articles){
@@ -408,25 +238,10 @@ function sourceName(domain=''){
 
 // FIX: removed unused/dead `countTerms` function that was never called anywhere.
 
-// FIX (matching gap): this used to require an EXACT word-boundary match —
-// the keyword 'strike' would match "strike" but NOT "strikes", 'missile'
-// would not match "missiles", 'tanker' would not match "tankers", etc. Since
-// real headlines are almost always plural ("Houthis claim strikes on Saudi
-// tankers"), a lot of genuinely-military headlines were silently scoring
-// zero on the Military category and falling through to whichever other
-// category happened to match something else in the same headline — which is
-// exactly how a Houthi-tanker-strike story ended up attributed mainly to the
-// Finance driver instead of Military. Now each term optionally matches a
-// trailing 's' or 'es'. Terms with a deliberate trailing space (like 'un ',
-// used to avoid matching "un-" prefixes) are left exact, since pluralizing
-// them doesn't make sense.
-export function countOccurrences(text, terms){
+function countOccurrences(text, terms){
   return terms.reduce((n,t)=>{
-    const hasTrailingSpace = /\s$/.test(t);
-    const trimmed = t.replace(/\s+$/,'');
-    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g,'\\s+');
-    const suffix = hasTrailingSpace ? '' : '(?:e?s)?';
-    const re = new RegExp('\\b' + escaped + suffix + '\\b', 'gi');
+    const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('\\b' + escaped.replace(/\\s+/g,'\\s+') + '\\b', 'gi');
     return n + ((text.match(re) || []).length);
   }, 0);
 }
@@ -456,7 +271,7 @@ function freshnessWeight(article){
 }
 
 function analyzeArticles(articles){
-  const list = (Array.isArray(articles) ? articles : []).filter(a => !isSatireHeadline(a.title));
+  const list = Array.isArray(articles) ? articles : [];
   const total = Math.max(list.length, 1);
   const driverRaw = Object.fromEntries(Object.keys(CATEGORY_KEYWORDS).map(k=>[k,0]));
   const driverSources = Object.fromEntries(Object.keys(CATEGORY_KEYWORDS).map(k=>[k,new Set()]));
@@ -630,13 +445,9 @@ function analyzeArticles(articles){
     })
   );
 
-  const stability = stabilityAdjustment(drivers, activeRegions, total, contributors);
-  const duplicate = duplicateNoiseReduction(list);
-  const globalSync = globalSynchronizationAdjustment(contributors, drivers);
-  const adjustment = stability.value;
-  const duplicateReduction = duplicate.value;
-  const globalNormalization = globalSync.value;
-  const adjustmentReasons = [...stability.reasons, ...duplicate.reasons, ...globalSync.reasons];
+  const adjustment = stabilityAdjustment(drivers, activeRegions, total, contributors);
+  const duplicateReduction = duplicateNoiseReduction(list);
+  const globalNormalization = globalSynchronizationAdjustment(contributors, drivers);
   const final = clamp(Math.round(raw + adjustment + duplicateReduction + globalNormalization), 5, 92);
   const sourceDiversity = new Set(list.map(a=>a.source).filter(Boolean)).size;
   // FIX: confidence bump for AI no longer depends on whether OPENAI_API_KEY merely
@@ -646,57 +457,27 @@ function analyzeArticles(articles){
   const confidence = clamp(Math.round(52 + Math.min(list.length,80)*0.18 + sourceDiversity*3), 45, 87);
   const top = pickTopEventFromScores(articleScores, activeRegions);
 
-  return { drivers, driverEvidence, regions:activeRegions, inactiveRegions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, adjustmentReasons, final, confidence, top, total, contributors, driverRaw, regionRaw };
+  return { drivers, driverEvidence, regions:activeRegions, inactiveRegions, regionEvidence, articleScores, raw, adjustment, duplicateReduction, globalNormalization, final, confidence, top, total, contributors, driverRaw, regionRaw };
 }
 
-// FIX (transparency): these three adjustment functions used to return only a
-// number. The "WHY SCORE?" panel could show e.g. "Stability adjustment -1.0"
-// but had no way to say *why* -1.0 rather than some other value — the actual
-// if/else branches that produced it were invisible to the person reading the
-// score. Each function now also returns a `reasons` array of plain-language
-// explanations for every branch that actually fired, so the UI can show the
-// real rule that was applied instead of a generic fixed sentence.
-
-export function duplicateNoiseReduction(articles=[]){
+function duplicateNoiseReduction(articles=[]){
   const titles = articles.map(a=>clean(a.title || '').toLowerCase()).filter(Boolean);
-  if(titles.length < 8) return { value:0, reasons:['Fewer than 8 signals: duplicate-noise check skipped.'] };
+  if(titles.length < 8) return 0;
   const stems = titles.map(t=>t.replace(/[^a-z0-9]+/g,' ').split(' ').slice(0,8).join(' '));
   const unique = new Set(stems).size;
   const ratio = unique / Math.max(stems.length,1);
-  const pct = Math.round(ratio*100);
-  if(ratio < .55) return { value:-4, reasons:[`Only ${pct}% of signals have distinct headlines (below 55%): -4 for heavy duplication.`] };
-  if(ratio < .72) return { value:-2, reasons:[`${pct}% of signals have distinct headlines (below 72%): -2 for moderate duplication.`] };
-  return { value:0, reasons:[`${pct}% of signals have distinct headlines: no duplication penalty.`] };
+  if(ratio < .55) return -4;
+  if(ratio < .72) return -2;
+  return 0;
 }
 
-export function globalSynchronizationAdjustment(contributors=[], drivers={}){
+function globalSynchronizationAdjustment(contributors=[], drivers={}){
   const topShare = contributors[0]?.share || 0;
-  const topName = contributors[0]?.name || 'the top region';
-  // FIX (production bug): a severe, single-region war (Military evidence
-  // near-max) was being scored LOWER than a milder, multi-region situation
-  // purely for being concentrated in one place. A severe single-region
-  // conflict is not less risky just because it hasn't spread — so the
-  // concentration penalty is skipped once Military pressure is itself severe.
-  const militarySevere = (drivers.Military||0) >= 80;
   let adj = 0;
-  const reasons = [];
-  if(topShare > 58 && !militarySevere){ adj -= 3; reasons.push(`${topName} accounts for ${topShare}% of signals (>58%): -3, risk is regionally concentrated rather than globally synchronized.`); }
-  else if(topShare > 58 && militarySevere){ reasons.push(`${topName} accounts for ${topShare}% of signals (>58%) but Military pressure is severe (${Math.round(drivers.Military||0)} ≥80): no concentration discount — a severe single-region conflict should not score lower than a milder multi-region one.`); }
-  if(topShare < 38 && (drivers.Military||0) > 50){ adj += 2; reasons.push(`No single region dominates (top region ${topShare}% <38%) while Military pressure is high (${Math.round(drivers.Military||0)}): +2, pressure appears spread across regions.`); }
-  if((drivers.Cyber||0) > 45 && (drivers.Logistics||0) > 45){ adj += 2; reasons.push(`Cyber (${Math.round(drivers.Cyber||0)}) and Logistics (${Math.round(drivers.Logistics||0)}) are both elevated (>45): +2, possible cross-domain spillover.`); }
-  if(!reasons.length) reasons.push('No global-synchronization conditions were met: no adjustment.');
-  return { value:adj, reasons };
-}
-
-export function stabilityAdjustment(drivers, regions, total, contributors=[]){
-  let adj = -3;
-  const reasons = ['Baseline stability adjustment: -3 (applied every cycle to avoid over-reacting to normal daily signal volume).'];
-  if((drivers.Military||0) > 58 && (drivers.Diplomatic||0) > 32){ adj += 2; reasons.push(`Military (${Math.round(drivers.Military||0)}) and Diplomatic (${Math.round(drivers.Diplomatic||0)}) are both elevated: +2, active engagement rather than silent escalation.`); }
-  if(regions[0]?.score > 62){ adj += 2; reasons.push(`Top region "${regions[0]?.name}" scores ${regions[0]?.score} (>62): +2, well-evidenced regional signal.`); }
-  if(total < 12){ adj -= 5; reasons.push(`Only ${total} public signals total (<12): -5, low signal volume reduces confidence.`); }
-  if((drivers.Logistics||0) < 22 && (drivers.Finance||0) < 22){ adj -= 2; reasons.push(`Logistics (${Math.round(drivers.Logistics||0)}) and Finance (${Math.round(drivers.Finance||0)}) both low (<22): -2, no economic spillover detected.`); }
-  if((contributors[0]?.share || 0) > 62){ adj -= 2; reasons.push(`Top region holds ${contributors[0]?.share}% share of signals (>62%): -2, penalizing single-region concentration.`); }
-  return { value: Math.round(adj*10)/10, reasons };
+  if(topShare > 58) adj -= 3; // regional concentration, not global synchronization
+  if(topShare < 38 && (drivers.Military||0) > 50) adj += 2; // pressure spread across regions
+  if((drivers.Cyber||0) > 45 && (drivers.Logistics||0) > 45) adj += 2;
+  return adj;
 }
 
 function pickTopEventFromScores(articleScores, regions){
@@ -708,19 +489,22 @@ function pickTopEventFromScores(articleScores, regions){
   return preferred[0]?.article || articleScores[0].article;
 }
 
+function stabilityAdjustment(drivers, regions, total, contributors=[]){
+  let adj = -3;
+  if((drivers.Military||0) > 58 && (drivers.Diplomatic||0) > 32) adj += 2;
+  if(regions[0]?.score > 62) adj += 2;
+  if(total < 12) adj -= 5;
+  if((drivers.Logistics||0) < 22 && (drivers.Finance||0) < 22) adj -= 2;
+  if((contributors[0]?.share || 0) > 62) adj -= 2;
+  return Math.round(adj*10)/10;
+}
+
 async function aiAssessment(analyzed, articles, sourceError=null){
   const key = process.env.OPENAI_API_KEY;
   if(!key) return null;
 
   try{
     const selectedTop = analyzed.top || articles[0] || {};
-    // FIX (score scope): only send the AI the 5 drivers that actually feed
-    // the score. Previously the full drivers object (including Disaster and
-    // Health) was sent, so even with keyDrivers restricted by prompt
-    // instruction, the model could still reference Disaster/Health inside
-    // free-text fields like scoreReason or assessment, since it could see
-    // those values right there in the data block.
-    const scoringDrivers = Object.fromEntries(Object.entries(analyzed.drivers).filter(([k])=>!NON_SCORING_CATEGORIES.includes(k)));
     const headlines = articles.slice(0,18).map((a,i)=>`${i+1}. ${a.title} [${a.source}]`).join('\n');
     const prompt = `You are ORACLE, a calm world-risk intelligence engine. Analyze ONLY the supplied public headlines and calculated signals. Prefer source-bound, non-causal intelligence wording.
 Return strict JSON only. No markdown.
@@ -732,12 +516,12 @@ Required keys:
 - scoreReason: 1 sentence explaining the score using drivers and public signals.
 - outlook24h: one of STABLE, WATCH, ESCALATING, DE-ESCALATING.
 - outlookText: 1 sentence explaining the 24h outlook without claiming certainty.
-- keyDrivers: array of 3 to 5 short driver labels. Use ONLY the 5 geopolitical drivers that feed the score (Military, Diplomatic, Cyber, Logistics, Finance). Do NOT include Disaster or Health — those are tracked separately and intentionally excluded from this score, so listing them here would misleadingly imply they moved it.
+- keyDrivers: array of 3 to 5 short driver labels.
 - watchNext: array of 3 to 5 short items ORACLE should monitor next.
 - sourceConfidence: object with availableSources array, limitedSources array, note string.
 - verifiedSources: array of source names actually present in supplied headlines.
-- xPostGlobal: English post under 650 characters, world-facing tone, source-bound, cautious. Do NOT include any hashtags in this text — hashtags are supplied separately via the 'hashtags' field and get appended after this text, so adding them here would duplicate them.
-- xPostJapanese: Japanese post under 650 Japanese characters, calm and concise, source-bound. Do NOT include any hashtags in this text, for the same reason.
+- xPostGlobal: English post under 650 characters, world-facing tone, source-bound, cautious.
+- xPostJapanese: Japanese post under 650 Japanese characters, calm and concise, source-bound.
 - hashtags: array of 8 to 14 relevant English hashtags.
 
 CRITICAL SAFETY / RELIABILITY RULES:
@@ -766,10 +550,10 @@ CRITICAL SAFETY / RELIABILITY RULES:
 X post rules:
 - Always include the score and state.
 - Avoid definitive claims unless directly supported by supplied headlines.
-- hashtags must always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Beyond those five, add whatever short, real, on-topic tags actually match the supplied headlines — do not limit yourself to a fixed example list. If the headlines involve Sudan, Myanmar, DRC, Haiti, Venezuela, a disease outbreak, or any other topic not in a typical example set, tag it plainly (e.g. Sudan, Myanmar, PublicHealth, Pandemic) rather than omitting it or forcing it into an unrelated existing tag.
+- hashtags must always include ORACLE, WorldRiskIndex, GlobalRisk, AIAnalysis, OSINT. Add topical tags only when supported by supplied headlines, such as Ukraine, Russia, Taiwan, China, MiddleEast, Iran, Israel, CyberSecurity, Earthquake, Logistics, Energy, Geopolitics.
 
 Global score: ${analyzed.final}
-Drivers: ${JSON.stringify(scoringDrivers)}
+Drivers: ${JSON.stringify(analyzed.drivers)}
 Regions: ${JSON.stringify(analyzed.regions)}
 Risk contributors: ${JSON.stringify(analyzed.contributors || [])}
 Calculation: raw=${round1(analyzed.raw)}, stability=${round1(analyzed.adjustment)}, duplicateNoise=${round1(analyzed.duplicateReduction)}, globalNormalization=${round1(analyzed.globalNormalization)}, final=${analyzed.final}
@@ -937,7 +721,7 @@ function safeHashtags(tags){
   return [...new Set([...base, ...allowed])].slice(0,14);
 }
 
-export function normalizeOutlook(v=''){
+function normalizeOutlook(v=''){
   const s = String(v || '').toUpperCase().replace(/[^A-Z-]/g,'');
   if(['STABLE','WATCH','ESCALATING','DE-ESCALATING'].includes(s)) return s;
   return 'STABLE';
@@ -969,16 +753,9 @@ function alignedOutlookText(label, aiText='', topRegion='Global', corpus=''){
   return text;
 }
 
-// FIX (score scope): even with the prompt updated, the AI can still ignore
-// instructions occasionally — this strips any Disaster/Health line that
-// slips through, so KEY DRIVERS can never contradict the "5 geopolitical
-// drivers only" note shown right above it in WHY SCORE?.
-function stripNonScoringCategories(lines){
-  return (lines || []).filter(line => !NON_SCORING_CATEGORIES.some(cat => new RegExp(`^${cat}\\b`, 'i').test(String(line))));
-}
 function safeList(list, topRegion, analyzed){
   const arr = Array.isArray(list) ? list : [];
-  const cleaned = stripNonScoringCategories(arr.map(x=>clean(String(x))).filter(Boolean)).slice(0,5);
+  const cleaned = arr.map(x=>clean(String(x))).filter(Boolean).slice(0,5);
   return cleaned.length ? cleaned : fallbackDrivers(topRegion, analyzed);
 }
 function driverTrendLabel(value){
@@ -988,7 +765,7 @@ function driverTrendLabel(value){
 }
 function fallbackDrivers(topRegion, analyzed){
   const d = analyzed.drivers || {};
-  const ordered = Object.entries(d).filter(([k])=>!NON_SCORING_CATEGORIES.includes(k)).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const ordered = Object.entries(d).sort((a,b)=>b[1]-a[1]).slice(0,5);
   return ordered.map(([k,v],i)=> i===0
     ? `${k}: primary ${driverTrendLabel(v)} signal (${Math.round(v)})`
     : `${k}: ${driverTrendLabel(v)} signal (${Math.round(v)})`
@@ -1006,7 +783,7 @@ function fallbackWatchNext(topRegion){
 // FIX: baseline placeholder articles (source === 'ORACLE Baseline'/'ORACLE System')
 // are now excluded from the "verified sources" list so the UI can never claim
 // e.g. "Reuters, AP, ..." verified sources when the underlying content was synthetic.
-export function getVerifiedSources(articles){
+function getVerifiedSources(articles){
   const real = (articles||[]).filter(a => a.sourceType !== 'baseline-placeholder');
   const sources = [...new Set(real.map(a=>a.source).filter(Boolean))];
   const baseline = ['Reuters','AP','BBC','NHK','Al Jazeera'];
@@ -1038,14 +815,7 @@ function topicSummary(articles=[]){
   const regions = [];
   if(/iran|israel|gaza|hamas|hezbollah|houthi|red sea|lebanon|syria/.test(corpus)) regions.push('Middle East');
   if(/ukraine|russia|kyiv|donetsk|kharkiv|zaporizhzhia/.test(corpus)) regions.push('Eastern Europe');
-  // FIX: removed the bare word 'maritime' from this East Asia match for the
-  // same reason it was already removed from REGION_KEYWORDS' South China Sea
-  // terms — 'maritime' is a generic word that also appears in Middle
-  // East/Hormuz shipping stories, so keeping it here (while REGION_KEYWORDS
-  // no longer uses it) meant this hero-text summary could still label a
-  // Hormuz-only story as "East Asia" even though the actual region scoring
-  // wouldn't. Now both use the same Taiwan/China/South China Sea-specific terms.
-  if(/taiwan|china|south china sea|philippines|spratly|scarborough/.test(corpus)) regions.push('East Asia');
+  if(/taiwan|china|south china sea|philippines|maritime/.test(corpus)) regions.push('East Asia');
   if(/cyber|hack|malware|ransomware|breach|ddos/.test(corpus)) regions.push('cyber activity');
   if(/earthquake|volcano|storm|hurricane|typhoon|tsunami|wildfire|flood/.test(corpus)) regions.push('natural hazard monitoring');
   return regions.length ? regions.slice(0,3).join(', ') : 'monitored regions';
@@ -1072,7 +842,7 @@ function buildFacts(articles, llm, meta){
   facts.push(`${sourceText}: public reporting is being monitored across ${topic}.`);
 
   if(count > 0){
-    facts.push(`ORACLE reviewed ${count} recent public signals and grouped them by military, diplomatic, cyber, logistics, finance, disaster, and health categories.`);
+    facts.push(`ORACLE reviewed ${count} recent public signals and grouped them by military, diplomatic, cyber, logistics, finance, and disaster categories.`);
   } else {
     facts.push('Live public source volume is limited; ORACLE is using conservative baseline monitoring.');
   }
@@ -1127,43 +897,14 @@ function evidenceStrengthLabel(evidence, isBaseline){
   if(isBaseline) return 'NONE'; // FIX: baseline data has no real evidence strength
   const r = evidence?.reliability || 0;
   const sc = evidence?.sourceCount || 0;
-  // FIX (honesty): thresholds were r>=70 && sc>=3 for MODERATE, r>=85 && sc>=5
-  // for HIGH. In practice a routine day (e.g. 77% reliability, 10 sources)
-  // already cleared MODERATE, which reads as "reasonably solid evidence" —
-  // but the underlying method is keyword-matching heuristics with no
-  // fact-checking, source-corroboration, or claim verification at all. That
-  // gap between what the label implies and what was actually checked is the
-  // problem, not the reliability number itself. Raising the bar (and
-  // requiring more independent sources) makes MODERATE/HIGH rarer and closer
-  // to what they should mean: "a lot of independent public reporting lines up",
-  // not "the AI is confident this is true".
-  if(r >= 92 && sc >= 7) return 'HIGH';
-  if(r >= 80 && sc >= 6) return 'MODERATE';
+  if(r >= 85 && sc >= 5) return 'HIGH';
+  if(r >= 70 && sc >= 3) return 'MODERATE';
   return 'LIMITED';
 }
 
 function topEventSummary(top, analyzed){
   const region = analyzed.regions?.find(r => (top?.title || '').toLowerCase().includes(r.name.split(' ')[0].toLowerCase()))?.name || analyzed.regions?.[0]?.name || 'global risk';
-
-  // FIX: this used to pick the single globally-dominant driver across ALL
-  // articles (Object.entries(analyzed.drivers)...) and attribute it to this
-  // specific top event, regardless of what that event's own headline was
-  // actually about. E.g. a clearly diplomatic headline ("US demands Iran
-  // publicly state...") was being labeled "contributes mainly to the
-  // military driver" purely because Military happened to be the largest
-  // driver overall that cycle. Now we look up this article's own matched
-  // categories (the same articleScores data timelineClassification uses)
-  // and only fall back to the global dominant driver if no per-article
-  // match exists.
-  const scores = Array.isArray(analyzed?.articleScores) ? analyzed.articleScores : [];
-  const match = scores.find(x =>
-    (top?.url && x?.article?.url === top.url) ||
-    (!top?.url && x?.article?.title === top?.title)
-  );
-  const primary = match?.primaryDriver
-    || Object.entries(analyzed.drivers || {}).sort((a,b)=>b[1]-a[1])[0]?.[0]
-    || 'risk';
-
+  const primary = Object.entries(analyzed.drivers || {}).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'risk';
   return `${top.source || 'Source'} report monitored as a ${region} signal; it contributes mainly to the ${primary.toLowerCase()} driver.`;
 }
 
@@ -1183,7 +924,6 @@ function buildScoreBridge(analyzed){
     duplicateNoise: round1(analyzed.duplicateReduction),
     globalNormalization: round1(analyzed.globalNormalization),
     final: analyzed.final,
-    reasons: analyzed.adjustmentReasons || [],
     note: 'Raw weighted drivers are adjusted for duplicate noise, regional concentration, and global synchronization.'
   };
 }
@@ -1210,36 +950,6 @@ function timelineClassification(article, analyzed){
   return { regions:[], drivers:[], primaryRegion:'Global', primaryDriver:'General', evidenceWeight:0 };
 }
 
-// FIX (coverage gap): ORACLE only scores 6 fixed regions. A real, heavily-
-// reported conflict or crisis outside that list (Sudan, Myanmar, Haiti,
-// Venezuela, etc.) would previously just vanish — it might get fetched by
-// the collectors, get a Military/Diplomatic driver bump, but never surface
-// anywhere a person could actually see it, because nothing renders
-// unmatched articles. This pulls out headlines that matched at least one
-// risk category (so it's not just random noise) but NO fixed region, sorted
-// by the same event-scoring already used for the top event, so real gaps in
-// coverage are visible on the page instead of silently dropped.
-function buildOtherSignificantNews(analyzed){
-  const scores = Array.isArray(analyzed?.articleScores) ? analyzed.articleScores : [];
-  const unmatched = scores.filter(x => (!x.matchedRegions || x.matchedRegions.length === 0) && Object.keys(x.cats || {}).length > 0);
-  const seenTitles = new Set();
-  return unmatched
-    .sort((a,b)=>b.score-a.score)
-    .filter(x=>{
-      const key = String(x.article?.title || '').toLowerCase();
-      if(!key || seenTitles.has(key)) return false;
-      seenTitles.add(key);
-      return true;
-    })
-    .slice(0,5)
-    .map(x=>({
-      title: x.article?.title || '',
-      source: x.article?.source || 'Source',
-      url: x.article?.url || '#',
-      primaryDriver: x.primaryDriver || 'General'
-    }));
-}
-
 function buildPayload(analyzed, articles, llm, meta={}){
   const score = analyzed.final;
   const state = stateFromScore(score);
@@ -1251,33 +961,14 @@ function buildPayload(analyzed, articles, llm, meta={}){
   // text next to real-looking timestamps was the most misleading part of the
   // original output.
   const realArticles = (articles||[]).filter(a => a.sourceType !== 'baseline-placeholder');
-  // FIX (timeline noise): the timeline used to show the most recent N articles
-  // regardless of whether they matched ANY risk category or region — e.g. an
-  // AP obituary piece mentioning "foreign policy" was appearing next to real
-  // military/diplomatic signals just because it was recent, with no keyword
-  // relevance at all. Now an article only qualifies for the timeline if it
-  // matched at least one category or region during scoring (same match data
-  // timelineClassification already computes), so off-topic recent articles
-  // are excluded instead of being presented as risk signals.
   const timeline = [...realArticles]
-    .map((a,i)=>({ article:a, index:i, cls: timelineClassification(a, analyzed) }))
-    // FIX (timeline precision): this used to require a region match OR a
-    // category match. That let through articles that mention a monitored
-    // region's name but carry zero risk-category content at all — e.g. a
-    // Taiwan culture/lifestyle story ("book sales rocket in Taiwan") showed
-    // up tagged "TAIWAN STRAIT" in the risk timeline with no Military/
-    // Diplomatic/Cyber/etc. tag beside it, because merely mentioning
-    // "Taiwan" was enough. Requiring BOTH now means an article only counts
-    // as a risk signal if it's tied to a monitored region AND actually
-    // matched a risk category — a bare place-name mention isn't a signal.
-    .filter(({cls}) => (cls.regions && cls.regions.length) && (cls.drivers && cls.drivers.length))
-    .sort((x,y)=>{
-      const ta = new Date(x.article?.seen || 0).getTime();
-      const tb = new Date(y.article?.seen || 0).getTime();
+    .sort((a,b)=>{
+      const ta = new Date(a?.seen || 0).getTime();
+      const tb = new Date(b?.seen || 0).getTime();
       return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
     })
     .slice(0,5)
-    .map(({article:a, index:i, cls})=>({ time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting', ...cls }));
+    .map((a,i)=>{ const cls = timelineClassification(a, analyzed); return { time: sourceTimeLabel(a,i), text: `${a.source}: ${a.title.slice(0,115)}`, source:a.source, url:a.url, sourceType:a.sourceType || 'public-reporting', ...cls }; });
 
   const aiOk = Boolean(llm && !llm.error);
   const corpus = (articles||[]).map(a=>a.title).join(' ');
@@ -1301,10 +992,6 @@ function buildPayload(analyzed, articles, llm, meta={}){
     // FIX: dataStatus can now surface a distinct, unambiguous BASELINE state
     // instead of being lumped in with generic "CACHED / DEGRADED".
     dataStatus: isBaseline ? 'BASELINE — NOT LIVE' : (meta.degraded ? 'CACHED / DEGRADED' : 'LIVE SOURCES'),
-    // FIX: expose the actual source-fetch cache duration so the frontend can
-    // state it accurately instead of hardcoding a number that could drift out
-    // of sync with CACHE_TTL_MS.
-    cacheTtlMinutes: Math.round(CACHE_TTL_MS / 60000),
     isBaseline,
     aiUsed: aiOk,
     aiMode: aiOk ? 'AI ANALYSIS ACTIVE' : 'RULE BASED',
@@ -1312,15 +999,6 @@ function buildPayload(analyzed, articles, llm, meta={}){
     sourceError: meta.sourceError || null,
     updatedAt:new Date().toISOString(),
     score,
-    // FIX (honesty): this field used to drive the "+2 / 24H" figure on screen,
-    // but it was never a real 24h-ago reading — just `score - 2` whenever the
-    // top region had more than 2 articles, else `score - 0`. That produced an
-    // almost-always-+2 display that looked like a real trend but wasn't. The
-    // frontend no longer uses this field for the visible delta; it now keeps
-    // its own timestamped score log (localStorage) and only shows a 24H delta
-    // once a real ~24h-old reading exists, saying so plainly otherwise. This
-    // field is kept only for backward compatibility / other potential
-    // consumers and should not be re-wired into the hero delta.
     previousScore: clamp(score - (analyzed.regions[0]?.count > 2 ? 2 : 0), 0, 100),
     state,
     confidence,
@@ -1349,7 +1027,7 @@ function buildPayload(analyzed, articles, llm, meta={}){
       : (aiOk ? safeIntelText(llm.assessment, `ORACLE assesses ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`, corpus) : `ORACLE assesses ${state.toLowerCase()} global risk conditions led by ${topRegion}. Signals remain regionally concentrated rather than globally synchronized.`),
     scoreReason: isBaseline
       ? 'This score is derived from baseline placeholder text, not live signals, and should not be treated as a real risk measurement.'
-      : (aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomatic, cyber, logistics, and finance categories, adjusted for limited global synchronization.`, corpus) : `Score reflects weighted public signals across military, diplomatic, cyber, logistics, and finance categories, adjusted for limited global synchronization.`),
+      : (aiOk ? safeIntelText(llm.scoreReason, `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`, corpus) : `Score reflects weighted public signals across military, diplomacy, cyber, logistics, finance and disaster categories, adjusted for limited global synchronization.`),
     xPost: isBaseline ? null : (aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null),
     xPostGlobal: isBaseline ? null : (aiOk ? safeIntelText(llm.xPostGlobal || llm.xPost, '', corpus) : null),
     xPostJapanese: isBaseline ? null : (aiOk ? safeIntelText(llm.xPostJapanese, '', corpus) : null),
@@ -1357,31 +1035,18 @@ function buildPayload(analyzed, articles, llm, meta={}){
     topEvent: isBaseline
       ? { title:'No live top event available', summary:'ORACLE has no verified public signals to select a top event from right now.', source:'ORACLE System', url:'https://www.gdeltproject.org/' }
       : { title: top.title, summary: topEventSummary(top, analyzed), source: top.source || 'GDELT', url: top.url || 'https://www.gdeltproject.org/' },
-    drivers: Object.fromEntries(Object.entries(analyzed.drivers).filter(([k])=>!NON_SCORING_CATEGORIES.includes(k))),
-    driverEvidence: Object.fromEntries(Object.entries(analyzed.driverEvidence || {}).filter(([k])=>!NON_SCORING_CATEGORIES.includes(k))),
-    // FIX (score scope): informational-only, does not feed the ORACLE INDEX.
-    disasterHealth: {
-      Disaster: analyzed.drivers.Disaster || 0,
-      Health: analyzed.drivers.Health || 0
-    },
+    drivers: analyzed.drivers,
+    driverEvidence: analyzed.driverEvidence || {},
     weights: WEIGHTS,
-    calculation: { raw: round1(analyzed.raw), stability: round1(analyzed.adjustment), duplicateNoise: round1(analyzed.duplicateReduction), globalNormalization: round1(analyzed.globalNormalization), containment: round1(analyzed.adjustment + analyzed.duplicateReduction + analyzed.globalNormalization), final: score, reasoning: buildReasoning(analyzed, topRegion), adjustmentReasons: analyzed.adjustmentReasons || [] },
+    calculation: { raw: round1(analyzed.raw), stability: round1(analyzed.adjustment), duplicateNoise: round1(analyzed.duplicateReduction), globalNormalization: round1(analyzed.globalNormalization), containment: round1(analyzed.adjustment + analyzed.duplicateReduction + analyzed.globalNormalization), final: score, reasoning: buildReasoning(analyzed, topRegion) },
     regions: analyzed.regions.map(r=>({ name:r.name, score:r.score, change:r.change, trend:r.trend, signals:round1(r.raw || r.count || 0), sources:r.sources || 0, articles:r.articles || 0, terms:r.terms || [], freshness:r.freshness || 0, breakdown:r.breakdown || {} })),
     inactiveRegions: (analyzed.inactiveRegions || []).map(r=>({ name:r.name, trend:'No verified activity' })),
     timeline: timeline.length ? timeline : [{time: isBaseline ? 'N/A' : 'NOW', text: isBaseline ? 'No live signals available.' : 'Monitoring active.'}],
-    otherSignificantNews: isBaseline ? [] : buildOtherSignificantNews(analyzed),
-    // FIX (honesty): these four tiles used to read like output from dedicated
-    // feeds (a flight tracker, a cyber-threat feed, a shipping/logistics feed).
-    // There are no such feeds — every value here is the SAME keyword-matched
-    // Military/Cyber/Logistics driver score already shown in "WHY SCORE?",
-    // just re-labeled. `metricsNote` lets the frontend say that plainly next
-    // to the tiles instead of implying independent monitoring sources.
     metrics:{
       conflicts: String(Math.max(7, analyzed.regions.filter(r=>r.score>35).length + 4)), conflictsSub:'+1 / 24H · MONITORED',
       flights: analyzed.drivers.Military > 55 ? 'ELEVATED' : 'WATCH', flightsSub:'PUBLIC SIGNALS',
       cyber: analyzed.drivers.Cyber > 50 ? 'MEDIUM' : 'WATCH', cyberSub: analyzed.drivers.Cyber > 50 ? 'SURGE DETECTED' : 'LOW SURGE',
-      logistics: analyzed.drivers.Logistics > 45 ? 'WATCH' : 'STABLE', logisticsSub: analyzed.drivers.Logistics > 45 ? 'PRESSURE' : 'CONTAINED',
-      note: 'These tiles restate the Military / Cyber / Logistics keyword-driver scores above — there is no separate flight-tracking, cyber-threat, or shipping feed behind them.'
+      logistics: analyzed.drivers.Logistics > 45 ? 'WATCH' : 'STABLE', logisticsSub: analyzed.drivers.Logistics > 45 ? 'PRESSURE' : 'CONTAINED'
     }
   };
 }
@@ -1396,9 +1061,9 @@ function sourceHealthScore(articles, meta){
   return clamp(Math.round(55 + (active/total)*28 + volume*13), 55, 98);
 }
 
-export function stateFromScore(s){ if(s>=70)return'CRITICAL'; if(s>=50)return'HIGH'; if(s>=30)return'WATCH'; return'STABLE'; }
-export function clamp(n,min,max){ return Math.max(min, Math.min(max, Number(n)||0)); }
-export function round1(n){ return Math.round(Number(n||0)*10)/10; }
+function stateFromScore(s){ if(s>=70)return'CRITICAL'; if(s>=50)return'HIGH'; if(s>=30)return'WATCH'; return'STABLE'; }
+function clamp(n,min,max){ return Math.max(min, Math.min(max, Number(n)||0)); }
+function round1(n){ return Math.round(Number(n||0)*10)/10; }
 
 function fallbackPayload(error){
   // FIX: this hard-fallback path (thrown exception) is now also explicitly
@@ -1406,9 +1071,7 @@ function fallbackPayload(error){
   // baseline path above.
   return {
     ok:true, mode:'fallback', isBaseline:true, error, aiMode:'RULE BASED', updatedAt:new Date().toISOString(), score:28, previousScore:25, state:'STABLE', confidence:20, sourceHealth:0,
-    serverDelta24h:{ available:false }, serverPreviousDay:null,
     dataStatus:'FALLBACK — NOT LIVE',
-    cacheTtlMinutes: Math.round(CACHE_TTL_MS / 60000),
     brief:'ORACLE encountered an error and has no live data. Showing conservative fallback values only.',
     assessment:'This is a fallback response due to an internal error. It does not reflect live monitoring.',
     scoreReason:'Fallback score is a fixed conservative placeholder because live source retrieval did not complete.',
@@ -1419,8 +1082,8 @@ function fallbackPayload(error){
     sourceConfidence:{availableSources:[],limitedSources:['GDELT','Google News','USGS','NOAA','Guardian'],note:'Live public source retrieval failed entirely; all figures are fallback placeholders, not verified data.'},
     verifiedSources:[], evidence:{sourceCount:0, sources:[], articleCount:0, crossChecks:0, reliability:0}, evidenceStrength:'NONE', articleCount:0,
     topEvent:{ title:'No live top event available', summary:'No verified public signals are available due to an internal error.', source:'ORACLE System', url:'https://www.gdeltproject.org/' },
-    drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10 }, disasterHealth:{ Disaster:0, Health:0 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28, adjustmentReasons:['Fallback mode: adjustment reasons are not available because live scoring did not run.'] },
+    drivers:{ Military:38, Diplomatic:26, Cyber:18, Logistics:12, Finance:10, Disaster:7 }, weights:WEIGHTS, calculation:{ raw:31.9, containment:-3.9, final:28 },
     regions:[{name:'Ukraine',score:44,change:'+1',trend:'Watch'},{name:'Taiwan Strait',score:39,change:'0',trend:'Watch'},{name:'Middle East',score:37,change:'0',trend:'Stable'},{name:'South China Sea',score:31,change:'0',trend:'Stable'},{name:'Korea',score:25,change:'0',trend:'Stable'}],
-    timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], otherSignificantNews:[], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED', note:'Fallback mode: no scoring ran, so these tiles are fixed placeholders, not even keyword-derived values.' }
+    timeline:[{time:'N/A',text:'Fallback mode active — no live data.'}], metrics:{ conflicts:'7', conflictsSub:'+1 / 24H · MONITORED', flights:'WATCH', flightsSub:'PUBLIC SIGNALS', cyber:'WATCH', cyberSub:'LOW SURGE', logistics:'STABLE', logisticsSub:'CONTAINED' }
   };
 }
