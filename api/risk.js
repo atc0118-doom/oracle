@@ -21,7 +21,10 @@ const REGION_KEYWORDS = [
 
 const CATEGORY_KEYWORDS = {
   Military: ['military','missile','drone','airstrike','troops','army','navy','air force','attack','defense','war','combat','shelling','weapon','fighter','strike'],
-  Diplomatic: ['sanction','summit','ceasefire','negotiation','treaty','diplomatic','minister','embassy','un ','resolution','talks','envoy'],
+  // Diplomatic = diplomatic FRICTION only. Neutral/de-escalating words (talks, negotiation,
+  // summit, ceasefire, treaty, envoy, minister, resolution, "un ") were removed: headlines like
+  // "Russia agrees to resume talks" were pushing the risk score UP. Breakdown phrases are kept.
+  Diplomatic: ['sanction','sanctions','embassy','expel','expels','expelled','ultimatum','summon','summons','summoned','diplomatic row','diplomatic crisis','diplomatic tensions','ceasefire collapse','ceasefire violation','ceasefire violations','ceasefire breaks down','talks collapse','talks collapsed','talks break down','talks stall','talks stalled','suspend talks','suspends talks','walk out of talks','withdraw from talks','break off talks','ambassador recalled','recalls ambassador'],
   Cyber: ['cyber','hack','malware','ransomware','data breach','ddos','spyware','phishing'],
   Logistics: ['shipping','port','tanker','supply chain','freight','container','canal','sea lane','logistics','vessel'],
   Finance: ['market','oil','gas','inflation','stocks','bond','currency','rate','bank','gold','dollar'],
